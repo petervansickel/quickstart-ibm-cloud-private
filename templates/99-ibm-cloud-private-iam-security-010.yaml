@@ -1,0 +1,182 @@
+###############################################################################
+# Licensed Material - Property of IBM
+# 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+# DISCLAIMER:
+# The following source code is sample code created by IBM Corporation.
+# This sample code is provided to you solely for the purpose of assisting you
+# in the  use of  the product. The code is provided 'AS IS', without warranty or
+# condition of any kind. IBM shall not be liable for any damages arising out of
+# your use of the sample code, even if IBM has been advised of the possibility
+# of such damages.
+###############################################################################
+
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template defines the IAM resources used by the root template
+  and all other stack templates used to deploy the IBM Cloud Private cluster.
+
+Parameters:
+  ICPArchiveBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP install archive and Docker install binary is located.
+    Type: String
+
+  ICPDeploymentLogsBucketName:
+    Description: >-
+      The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
+    Type: String
+
+  ICPScriptBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP boostrap script packages are located.
+    Type: String
+
+  RootStackId:
+    Description: >-
+      The root stack resource ID.
+    Type: String
+
+  RootStackName:
+    Description: >-
+      The root stack name.
+    Type: String
+
+Resources:
+
+  ICPHostProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref ICPRootRole
+
+  ICPRootRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: ICPBucketAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            # ListBucket is useful to avoid 403 errors that are really 404 errors
+            Statement:
+              - Action:
+                  - 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${ICPArchiveBucketName}'
+                Effect: Allow
+              - Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${ICPArchiveBucketName}/*'
+                Effect: Allow
+              - Action:
+                  - 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${ICPScriptBucketName}'
+                Effect: Allow
+              - Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${ICPScriptBucketName}/*'
+                Effect: Allow
+              - Action:
+                  - 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${ICPDeploymentLogsBucketName}'
+                Effect: Allow
+              - Action:
+                  - 's3:PutObject'
+                Resource: !Sub 'arn:aws:s3:::${ICPDeploymentLogsBucketName}/*'
+                Effect: Allow
+
+          # From here on, the policies are needed for the bootstrap scripts
+          # to access various classes of resources to prepare for and configure
+          # the ICP installation.
+        - PolicyName: ICPCloudFormationAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - cloudformation:ListStackResources
+                  - cloudformation:DescribeStacks
+                Resource: '*'
+                Effect: Allow
+
+          # Needed for the bootstrap script introspection of the stack
+        - PolicyName: ICPAutoScalingAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                - autoscaling:DescribeAutoScalingGroups
+                Resource: '*'
+                Effect: Allow
+
+          # Needed for the bootstrap script introspection of the stack
+        - PolicyName: ICPEC2AccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - ec2:DescribeStacks
+                  - ec2:DescribeInstances
+                Effect: Allow
+                Resource: '*'
+
+        - PolicyName: ICPEC2MessagesAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - ec2messages:GetMessages
+                Effect: Allow
+                Resource: '*'
+
+        - PolicyName: ICPElastLoadBalancingAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - elasticloadbalancing:DescribeTags
+                  - elasticloadbalancing:DescribeLoadBalancers
+                Effect: Allow
+                Resource: '*'
+
+          # Needed for the bootstrap script and nodeinit script interaction
+        - PolicyName: ICPSSMAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - ssm:PutParameter
+                  - ssm:GetParameter
+                  - ssm:DeleteParameters
+                  # TBD I think the following is needed for instance health check
+                  - ssm:UpdateInstanceInformation
+                  - ssm:ListAssociations
+                  - ssm:ListInstanceAssociations
+                Effect: Allow
+                Resource: '*'
+
+# PVS: Experimented with Export, but for the ICP deployment
+# using Outputs is easier and more appropriate given the topology.
+Outputs:
+  ICPHostProfile:
+    Description: ICPHostProfile resource ID for use by parent stack template(s)
+    Value: !Ref ICPHostProfile
+
+  ICPRootRole:
+    Description: ICPRootRole resource ID for use by parent stack templates(s)
+    Value: !Ref ICPRootRole
+
+  StackId:
+    Description: The IAM Resources stack ID.  Not currently used.
+    Value: !Ref AWS::StackId

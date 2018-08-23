@@ -1,0 +1,402 @@
+###############################################################################
+# Licensed Material - Property of IBM
+# 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+# DISCLAIMER:
+# The following source code is sample code created by IBM Corporation.
+# This sample code is provided to you solely for the purpose of assisting you
+# in the  use of  the product. The code is provided 'AS IS', without warranty or
+# condition of any kind. IBM shall not be liable for any damages arising out of
+# your use of the sample code, even if IBM has been advised of the possibility
+# of such damages.
+###############################################################################
+#
+# NOTES:
+#  Each ICP node has an ICPRole tag that is used by the bootstrapping
+#  scripts to determine the role of the node.  The following values
+#  for the ICPRole tag and accepted (case insensitive):
+#    Master, Worker, Proxy, Management, VA, etcd
+#
+#  CloudFormation has a limit on the number of characters in a template
+#  of 51200.  Early in the development of the template, that limit was
+#  exceeded.  Nested stacks are used to make the template modular and
+#  to avoid issues with the character limit.  Nested stacks are more
+#  manageable and allow partitioning of development work.
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template deploys the ICP Management node auto-scaling group.
+
+  **WARNING** This template creates EC2 instances and related resources. You
+  will be billed for the AWS resources used if you create a stack from this
+  template.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: General Deployment Parameters
+        Parameters:
+          - ResourceOwner
+          - KeyName
+
+      - Label:
+          default: Deployment Control Parameters
+        Parameters:
+          - UsePrivateRegistry
+          - LoadICPImagesLocally
+
+      - Label:
+          default: Deployment Artifact Bucket Parameters
+        Parameters:
+          - ICPArchiveBucketName
+          - ICPArchivePath
+          - DockerInstallBinaryPath
+          - ICPScriptBucketName
+          - ICPClusterNodeScriptPackagePath
+          - ICPDeploymentLogsBucketName
+
+      - Label:
+          default: EC2 Instance Parameters
+        Parameters:
+          - ManagementNodeInstanceType
+
+      - Label:
+          default: IBM Cloud Private Cluster Parameters
+        Parameters:
+          - ManagementNodeCount
+
+      - Label:
+          default: Network Parameters
+        Parameters:
+          - ExternalSSHSecurityGroup
+          - InternalSSHSecurityGroup
+          - InternalICPSecurityGroup
+
+    ParameterLabels:
+      # Some attempt has been made to keep this list in aphabetical order
+      DockerInstallBinaryPath:
+        default: Docker Install Binary Path
+      ExternalSSHSecurityGroup:
+        default: External SSH Security Group
+      ICPArchiveBucketName:
+        default: ICP Archive Bucket Name
+      ICPArchivePath:
+        default: ICP Archive Path
+      ICPClusterNodeScriptPackagePath:
+        default: ICP Cluster Node Script Package Path
+      ICPDeploymentLogsBucketName:
+        default: ICP Deployment Logs Bucket Name
+      ICPRootRole:
+        default: ICP Root Role
+      ICPScriptBucketName:
+        default: ICP Script Bucket Name
+      InternalICPSecurityGroup:
+        default: Internal IBM Cloud Private Security Group
+      InternalSSHSecurityGroup:
+        default: Internal SSH Security Group
+      KeyName:
+        default: EC2 Key Pair Name
+      LoadICPImagesLocally:
+        default: Load ICP Images Locally
+      ManagementNodeInstanceType:
+        default: Management Node EC2 Instance Type
+      ManagementNodeCount:
+        default: Management Node Count
+      ResourceOwner:
+        default: Resource Owner
+      RootStackId:
+        default: Root Stack Resource Identifier
+      RootStackName:
+        default: Root Stack Name
+
+Parameters:
+  # Variables are declared in alphabetical order.
+  ClusterSubnetCidr:
+    Description: >-
+      ClusterSubnetCidr resource ID from the parent template
+    Type: String
+
+  DockerInstallBinaryPath:
+    Description: >-
+      The path to the Docker install binary in the ICP bucket.
+    Type: String
+
+  ExternalSSHSecurityGroup:
+    Description: >-
+      ExternalSSHSecurityGroup resource ID from the parant stack
+    Type: String
+
+  IBMCloudPrivateVPC:
+    Description: >-
+      The VPC resource ID for the IBMCloudPrivateVPC deployed by the root template.
+    Type: String
+
+  ICPArchiveBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP install archive and Docker install binary is located.
+    Type: String
+
+  ICPArchivePath:
+    Description: >-
+      The path to the ICP install archive in the ICP bucket.
+    Type: String
+
+  ICPClusterNodeScriptPackagePath:
+    Description: >-
+      The path in the ICP bootstrap S3 bucket to the ICP cluster node script package (zip) file.  Cluster nodes are master, proxy, worker, management, vulnerability advisor.
+    Type: String
+
+  ICPClusterSubnet:
+    Description: >-
+      ICPClusterSubnet resource ID from the parent template.
+    Type: String
+
+  ICPDeploymentLogsBucketName:
+    Description: >-
+      The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
+    Type: String
+
+  ICPGatewayAttachment:
+    Description: >-
+      ICPGatewayAttachment resource ID from the parent stack
+    Type: String
+
+  ICPHostProfile:
+    Description: >-
+      ICPHostProfile resource ID from the parent stack
+    Type: String
+
+  ICPScriptBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP boostrap script packages are located.
+    Type: String
+
+  ICPRootRole:
+    Description: >-
+      The IAM role with the permissions to access the various resources of the
+      IBM Cloud Private deployment.
+    Type: String
+
+  InternalICPSecurityGroup:
+    Description: >-
+      InternalICPSecurityGroup resource ID from the parent stack
+    Type: String
+
+  InternalSSHSecurityGroup:
+    Description: >-
+      InternalSSHSecurityGroup resource ID from the parent stack
+    Type: String
+
+  KeyName:
+    Description: >-
+      Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+
+  LoadICPImagesLocally:
+    Description: >-
+      When true, load the IBM Cloud Private images into the local Docker registry on each node using an archive extraction command run directly on each node.  When false, load the ICP images using an Ansible playbook launched from the Boot node. This variable is used for experiments in comparing different installation techniquies.
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: true
+
+  ManagementNodeCount:
+    Description: >-
+      Number of management nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.  The management nodes run the resource and log monitoring monitoring components, e.g., Prometheus, Grafana and the ELK stack.
+    Type: String
+    Default: 1
+
+  ManagementNodeInstanceType:
+    Description: ICP management node AWS EC2 instance type
+    Type: String
+    Default: m5d.2xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  ResourceOwner:
+    Description: >-
+      Value for the owner tag for the deployed resource associated with the stack.
+    Type: String
+
+  RootStackId:
+    Description: >-
+      The AWS resource ID for the root stack.
+    Type: String
+
+  RootStackName:
+    Description: >-
+      The root stack name.
+    Type: String
+
+Mappings:
+  # See https://cloud-images.ubuntu.com/locator/ec2/
+  # Builds needed that support HVM, Elastic Network Adapter (ENA)
+  # in order to use the MD5 instance types.
+  # TODO - Update EU an AP
+  AWSRegionAMIEC2:
+    us-east-1:
+      Ubuntu16: ami-ef151d90
+    us-east-2:
+      Ubuntu16: ami-dad5efbf
+    us-west-1:
+      Ubuntu16: ami-d8b05cbb
+    us-west-2:
+      Ubuntu16: ami-1cc69e64
+    eu-west-1:
+      Ubuntu16: ami-844e0bf7
+    eu-central-1:
+      Ubuntu16: ami-a9a557c6
+    ap-northeast-1:
+      Ubuntu16: ami-d82efcb9
+    ap-southeast-1:
+      Ubuntu16: ami-d554f1b6
+    ap-southeast-2:
+      Ubuntu16: ami-0bc1f168
+
+Resources:
+
+  ManagementNodeLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref ICPRootRole
+          buckets:
+            - !Ref ICPArchiveBucketName
+            - !Ref ICPScriptBucketName
+
+      AWS::CloudFormation::Init:
+        configSets:
+          ICPBootstrap:
+            - InstallPackages
+            - StackPropertiesFile
+            - ICPNodeInitScripts
+            - ICPInstallBinaries
+
+        InstallPackages:
+          packages:
+            apt:
+              sysstat: []
+              awscli: []
+            python:
+              pycryptodome: []
+              boto3: []
+
+        ICPInstallBinaries:
+          # The Docker install executable gets copied down to all nodes
+          files:
+            /root/docker/icp-install-docker.bin:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${InstallExecutable}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
+              mode: '000554'
+              owner: root
+              group: root
+            # It is expedient to copy the ICP install images to all nodes
+            /tmp/icp-install-archive.tgz:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${ArchivePath}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref ICPArchivePath }
+              mode: '000664'
+              owner: root
+              group: root
+
+        ICPNodeInitScripts:
+          sources:
+            /root: !Sub
+             - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+
+        StackPropertiesFile:
+          files:
+            /root/mystack.props:
+              content: !Sub |
+                STACK_NAME=${RootStackName}
+                STACK_ID="${RootStackId}"
+                ROLE=management
+
+            /root/.aws/config:
+              content: !Sub |
+                [default]
+                region=${AWS::Region}
+
+    Properties:
+      InstanceType: !Ref ManagementNodeInstanceType
+      IamInstanceProfile: !Ref ICPHostProfile
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap
+          - AWSRegionAMIEC2
+          - !Ref AWS::Region
+          - Ubuntu16
+
+      AssociatePublicIpAddress: true
+
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            apt update -y
+            # Intall pip, then use pip to install the aws cfn helpers
+            apt install -y python-pip
+            # Upgrading pip leads to an error. Don't do, pip install --upgrade pip
+            pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+            # Install the files and packages from the metadata
+            /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ManagementNodeLaunchConfiguration --configsets ICPBootstrap --region ${AWS::Region}
+            # pip install pyopenssl (so far, not needed on cluster nodes)
+            pip install docker
+            chmod +x /root/*.sh
+            chmod +x /root/*.py
+            cd /root
+            /root/nodeinit.sh --os ubuntu
+
+      SecurityGroups:
+        - !Ref ExternalSSHSecurityGroup
+        - !Ref InternalSSHSecurityGroup
+        - !Ref InternalICPSecurityGroup
+
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 500
+            Iops: 8000
+
+  ManagementNodeAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchConfigurationName: !Ref ManagementNodeLaunchConfiguration
+      VPCZoneIdentifier:
+        - !Ref ICPClusterSubnet
+      DesiredCapacity: !Ref ManagementNodeCount
+      MinSize: 1
+      MaxSize: 3
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+          PropagateAtLaunch: true
+        - Key: ICPRole
+          Value: Management
+          PropagateAtLaunch: true
+        - Key: !Sub kubernetes.io/cluster/${RootStackName}
+          Value: !Ref RootStackName
+          PropagateAtLaunch: true
+
+Outputs:
+  StackId:
+    Description: >-
+      The Management node stack resource ID.  Needed for introspection of the management node stack to pull out the EC2 instance information.
+    Value: !Ref AWS::StackId

@@ -1,0 +1,1431 @@
+###############################################################################
+# Licensed Material - Property of IBM
+# 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+# DISCLAIMER:
+# The following source code is sample code created by IBM Corporation.
+# This sample code is provided to you solely for the purpose of assisting you
+# in the  use of  the product. The code is provided 'AS IS', without warranty or
+# condition of any kind. IBM shall not be liable for any damages arising out of
+# your use of the sample code, even if IBM has been advised of the possibility
+# of such damages.
+###############################################################################
+#
+# NOTES:
+#  Each ICP node has an ICPRole tag that is used by the bootstrapping
+#  scripts to determine the role of the node.  The following values
+#  for the ICPRole tag and accepted (case insensitive):
+#    Master, Worker, Proxy, Management, VA, etcd
+#
+#  CloudFormation has a limit on the number of characters in a template
+#  of 51200.  Early in the development of the template, that limit was
+#  exceeded.  Nested stacks are used to make the template modular and
+#  to avoid issues with the character limit.  Nested stacks are more
+#  manageable and allow partitioning of development work.
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template deploys an IBM Cloud Private stack.
+  This is the root template for a collection of nested stacks that make
+  up the full ICP deployment.
+
+  **WARNING** This template creates EC2 instances and related resources. You
+  will be billed for the AWS resources used if you create a stack from this
+  template.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: General Deployment Parameters
+        Parameters:
+          - VPCName
+          - ResourceOwner
+          - KeyName
+
+      - Label:
+          default: Deployment Control Parameters
+        Parameters:
+          - UsePrivateRegistry
+          - LoadICPImagesLocally
+          - InceptionTimeout
+          - InstallICPFixpack
+
+      - Label:
+          default: IBM Cloud Private Configuration Parameters
+        Parameters:
+          - ClusterName
+          - ClusterDomain
+          - ClusterCADomain
+          - ClusterCIDR
+          - ExcludedMgmtServices
+          - ServiceCIDR
+
+      - Label:
+          default: Deployment Artifact Bucket Parameters
+        Parameters:
+          - DockerInstallBinaryPath
+          - ICPArchiveBucketName
+          - ICPArchivePath
+          - ICPBootNodeScriptPackagePath
+          - ICPBootNodeTemplatePath
+          - ICPClusterNodeScriptPackagePath
+          - ICPDeploymentLogsBucketName
+          - ICPManagementNodeTemplatePath
+          - ICPMasterNodeTemplatePath
+          - ICPProxyNodeTemplatePath
+          - ICPScriptBucketName
+          - ICPWorkerNodeTemplatePath
+          - S3ICPFixpackExecutablePath
+          - S3ICPInceptionFixpackPath
+
+      - Label:
+          default: Installation Parameters
+        Parameters:
+          - FixpackFileName
+          - FixpackInceptionImageName
+          - FixpackInstallCommandString
+          - InceptionImageName
+          - InceptionInstallCommandString
+
+      - Label:
+          default: EC2 Instance Parameters
+        Parameters:
+          - BootNodeInstanceType
+          - MasterNodeInstanceType
+          - ManagementNodeInstanceType
+          - ProxyNodeInstanceType
+          - VulnerabilityAdvisorInstanceType
+          - WorkerNodeInstanceType
+
+      - Label:
+          default: IBM Cloud Private Cluster Parameters
+        Parameters:
+          - MasterNodeCount
+          - ManagementNodeCount
+          - ProxyNodeCount
+          - VulnerabilityAdvisorNodeCount
+          - WorkerNodeCount
+
+      - Label:
+          default: Network Parameters
+        Parameters:
+          - ClusterSubnetCidr
+          - ExternalApplicationLocation
+          - ExternalICPAdminLocation
+          - ExternalSSHLocation
+
+    ParameterLabels:
+      # Some attempt has been made to keep this list in aphabetical order
+      BootNodeInstanceType:
+        default: Boot Node EC2 Instance Type
+      ClusterCADomain:
+        default: Cluster CA Domain
+      ClusterCIDR:
+        default: ICP Cluster Network CIDR
+      ClusterDomain:
+        default: Cluster Domain
+      ClusterName:
+        default: Cluster Name
+      ClusterSubnetCidr:
+        default: Cluster Subnet CIDR
+      DockerInstallBinaryPath:
+        default: Docker Install Binary Path
+      ExcludedMgmtServices:
+        default: Excluded Management Services
+      ExternalApplicationLocation:
+        default: External Application Location
+      ExternalICPAdminLocation:
+        default: External ICP Admin Location
+      ExternalSSHLocation:
+        default: External SSH Location
+      FixpackIntallCommandString:
+        default: Fixpack Install Command String
+      FixpackFileName:
+        default: Fixpack File Name
+      ICPArchiveBucketName:
+        default: ICP Archive Bucket Name
+      ICPArchivePath:
+        default: ICP Archive Path
+      ICPBootNodeTemplatePath:
+        default: ICP Cluster Template Path
+      ICPBootNodeScriptPackagePath:
+        default: ICP Boot Node Script Package Path
+      ICPClusterNodeScriptPackagePath:
+        default: ICP Cluster Node Script Package Path
+      ICPDeploymentLogsBucketName:
+        default: ICP Deployment Logs Bucket Name
+      ICPManagementNodeTemplatePath:
+        default: ICP Management Node Template Path
+      ICPMasterNodeTemplatePath:
+        default: ICP Master Node Template Path
+      ICPProxyNodeTemplatePath:
+        default: ICP Proxy Node Template Path
+      ICPScriptBucketName:
+        default: ICP Script Bucket Name
+      ICPWorkerNodeTemplatePath:
+        default: ICP Worker Node Template Path
+      InceptionTimeout:
+        default: Inception Timeout
+      InstallICPFixpack:
+        default: Install ICP Fixpack
+      KeyName:
+        default: EC2 Key Pair Name
+      LoadICPImagesLocally:
+        default: Load ICP Images Locally
+      ManagementNodeInstanceType:
+        default: Management Node EC2 Instance Type
+      MasterNodeInstanceType:
+        default: Master Node EC2 Instance Type
+      MasterNodeCount:
+        default: Master Node Count
+      ManagementNodeCount:
+        default: Management Node Count
+      ProxyNodeInstanceType:
+        default: Proxy Node EC2 Instance Type
+      ProxyNodeCount:
+        default: Proxy Node Count
+      ResourceOwner:
+        default: Resource Owner
+      S3ICPFixpackExecutablePath:
+        default: ICP Fixpack Executable Path
+      S3ICPInceptionFixpackPath:
+        default: ICP Inception Fixpack Path
+      ServiceCIDR:
+        default: ICP Service Network CIDR
+      UsePrivateRegistry:
+        default: Use Private Registry
+      VPCName:
+        default: Virtual Private Cloud Name
+      VulnerabilityAdvisorInstanceType:
+        default: Vulnerability Advisor EC2 Instance Type
+      VulnerabilityAdvisorNodeCount:
+        default: Vulnerability Node Count
+      WorkerNodeInstanceType:
+        default: Worker Node EC2 Instance Type
+      WorkerNodeCount:
+        default: Worker Node Count
+
+Parameters:
+  # Variables are declared in alphabetical order.
+  BootNodeInstanceType:
+    Description: ICP boot node AWS EC2 instance type
+    Type: String
+    Default: m5d.xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5d.large
+      - m5d.xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  ClusterCADomain:
+    Description: >-
+      The Certificate Authority (CA) domain used for the CN in the CA key.  The default is to
+      use the cluster name concatenated with the cluster domain.
+    Type: String
+    Default: mycluster.icp.local
+
+  ClusterCIDR:
+    Description: >-
+      The CIDR for the ICP cluster overlay network.  This gets assigned to the network_cidr attribute in config.yaml.  The value provided must be a network that does not conflict with the AWS VPC network.  It also must not conflict with the ICP service overlay network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 172.16.0.0/20
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  ClusterDomain:
+    Description: >-
+      The network domain of the cluster.
+    Type: String
+    Default: icp.local
+
+  ClusterName:
+    Description: >-
+      The name of the cluster.
+    Type: String
+    Default: mycluster
+
+  ClusterSubnetCidr:
+    Description: >-
+      The CIDR for the ICP cluster (physical/underlay) subnet.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.0.0.0/24
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  DockerInstallBinaryPath:
+    Description: >-
+      The path to the Docker install binary in the ICP bucket.
+    Type: String
+
+  ExcludedMgmtServices:
+    Description: >-
+      "Comma separated list of management services to be excluded from the IBM Cloud Private deployment.  Services that may be excluded are: service-catalog, metering, monitoring, istio, vulnerability-advisor, custom-metrics-adapter"
+    Type: CommaDelimitedList
+    Default:
+      "istio,vulnerability-advisor,custom-metrics-adapter"
+
+  ExternalApplicationLocation:
+    Description: >-
+      The IP address range that can be used to get to ICP Proxy ELB for access to deployed workloads on the ICP worker nodes from the external network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  ExternalICPAdminLocation:
+    Description: >-
+      The IP address range that can be used to get to ICP Master ELB from the external network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  ExternalSSHLocation:
+    Description: >-
+      The IP address range that can be used to SSH to the EC2 instances from the external network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  FixpackFileName:
+    Description: >-
+      The name of the fixpack file, e.g., ibm-cloud-private-2.1.0.3-fp1.sh.
+      Do not include a leading / on the path value.
+    Type: String
+    Default: ''
+
+  FixpackInceptionImageName:
+    Description: >-
+      The name of the inception image used for the ICP installation when the ICP fixpack is to be installed.
+    Type: String
+    Default: "ibmcom/icp-inception:2.1.0.3-ee-fp1"
+
+  FixpackInstallCommandString:
+    Description: >-
+      The command string to use when invoking the ICP fixpack installation.
+    Type: String
+    Default: "install -v"
+
+  ICPArchiveBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP install archive and Docker install binary is located.
+    Type: String
+
+  ICPArchivePath:
+    Description: >-
+      The path to the ICP install archive in the ICP bucket.
+      Do not include a leading / on the path value.
+    Type: String
+
+  ICPBootNodeScriptPackagePath:
+    Description: >-
+      The path in the S3 bucket to the ICP Boot node script package (zip) file.
+      Do not include a leading / on the path value.
+    Type: String
+
+  ICPBootNodeTemplatePath:
+    Description: >-
+      The path in the S3 script bucket for the ICP Boot node CloudFormation template.
+      Do not include a leading / on the path value.
+      The root template uses the boot node nested stack template found here.
+    Type: String
+
+  ICPClusterNodeScriptPackagePath:
+    Description: >-
+      The path in the S3 script bucket to the ICP cluster node script package (zip) file.
+      Do not include a leading / on the path value.
+      Cluster nodes are master, proxy, worker, management, vulnerability advisor.
+    Type: String
+
+  ICPDeploymentLogsBucketName:
+    Description: >-
+      The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
+    Type: String
+
+  ICPIAMTemplatePath:
+    Description: >-
+      The path in the S3 script bucket for the IAM CloudFormation template where roles and profiles are defined.
+      Do not include a leading / on the path value.
+      The root template uses the IAM template found here.
+    Type: String
+
+  ICPManagementNodeTemplatePath:
+    Description: >-
+      The path in the S3 script bucket for the ICP Management node CloudFormation template.
+      Do not include a leading / on the path value.
+      The root template uses the master node stack template found here.
+    Type: String
+
+  ICPMasterNodeTemplatePath:
+    Description: >-
+      The path in the S3 script bucket for the ICP Master node CloudFormation template.
+      Do not include a leading / on the path value.
+      The root template uses the master node stack template found here.
+    Type: String
+
+  ICPProxyNodeTemplatePath:
+    Description: >-
+      The path in the S3 script bucket for the ICP Proxy node CloudFormation template.
+      Do not include a leading / on the path value.
+      The root template uses the worker node stack template found here.
+    Type: String
+
+  ICPScriptBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP boostrap script packages are located.
+    Type: String
+
+  ICPVersion:
+    Description: >-
+      The version of ICP to be deployed.
+    Type: String
+
+  ICPWorkerNodeTemplatePath:
+    Description: >-
+      The path in the S3 script bucket for the ICP Worker node CloudFormation template.
+      Do not include a leading / on the path value.
+      The root template uses the worker node stack template found here.
+    Type: String
+
+  # TODO - Don't need this if we explicitly pass in the ICPVersion
+  InceptionImageName:
+    Description: >-
+      The name of the inception image to use for the ICP installation.
+    Type: String
+
+  InceptionInstallCommandString:
+    Description: >-
+      The command string to use when invoking the ICP installation.
+    Type: String
+    Default: "install -v"
+
+  InceptionTimeout:
+    Description: >-
+      The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  For a small HA cluster (12 nodes) with ICP images pre-installed locally (on each node), or with ICP images pulled from a private registry, and on disks with 8000 IOPS, the inception container typically completes the installation in about 30 minutes. YMMV
+    Type: Number
+    Default: 7200
+
+  InstallICPFixpack:
+    Description: >-
+      Indicate yes to install an ICP fixpack.  Indicate no if there is no fixpack to install or the fixpack installation is to be skipped.
+    Type: String
+    AllowedValues:
+      - Yes
+      - No
+    Default: No
+
+  KeyName:
+    Description: >-
+      Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+
+  LoadICPImagesLocally:
+    Description: >-
+      When true, load the IBM Cloud Private images into the local Docker registry on each node using an archive extraction command run directly on each node.  When false, load the ICP images using an Ansible playbook launched from the Boot node. This variable is used for experiments in comparing different installation techniquies.
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: true
+
+  ManagementNodeCount:
+    Description: >-
+      Number of management nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.  The management nodes run the resource and log monitoring monitoring components, e.g., Prometheus, Grafana and the ELK stack.
+    Type: Number
+    Default: 1
+
+  ManagementNodeInstanceType:
+    Description: ICP management node AWS EC2 instance type
+    Type: String
+    Default: m5d.2xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  MasterNodeCount:
+    Description: >-
+      Number of master nodes to be deployed in the ICP cluster. Must be an odd number. For a development deployment 1 is sufficient. For production deployments typically 3 or 5.
+    Type: Number
+    Default: 1
+
+  MasterNodeInstanceType:
+    Description: ICP master node AWS EC2 instance type
+    Type: String
+    Default: m5d.2xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  ProxyNodeCount:
+    Description: >-
+      Number of proxy nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.
+    Type: Number
+    Default: 1
+
+  ProxyNodeInstanceType:
+    Description: ICP worker node AWS EC2 instance type
+    Type: String
+    Default: m5d.xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  ResourceOwner:
+    Description: >-
+      Value for the owner tag for the deployed resource associated with the stack.
+    Type: String
+
+  S3ICPFixpackExecutablePath:
+    Description: >-
+      The S3 path to the latest ICP fixpack executable (.sh) file.
+    Type: String
+    Default: ''
+
+  S3ICPInceptionFixpackPath:
+    Description: >-
+      The S3 path to the latest ICP inception fixpack archive (.tar) file.
+    Type: String
+    Default: ''
+
+  ServiceCIDR:
+    Description: >-
+      The CIDR for the ICP service overlay network.  This gets assigned to the service_cluster_ip_range attribute in config.yaml.  The value provided must be a network that does not conflict with the AWS VPC network.  It also must not conflict with the ICP cluster overlay network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 172.16.16.0/24
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  UsePrivateRegistry:
+    Description: >-
+      Configure a private Docker registry on the Boot node. Load the private registry with the IBM Cloud Private images. Install ICP using the private registry. (Not Available Yet)
+    Type: String
+    AllowedValues:
+      - True
+      - False
+    Default: False
+
+  VPCName:
+    Description: The name of the deployed Virtual Private Cloud
+    Type: String
+    Default: IBMCloudPrivateVPC
+
+  VulnerabilityAdvisorNodeCount:
+    Description: >-
+      Number of Vulnerability Advisor nodes to be deployed in the ICP cluster. Not typically deployed for a development environment. For production deployments, at least 2 and typically 3 are deployed.  The VA nodes run the resource image and container security scanning components.
+    Type: Number
+    Default: 1
+
+  VulnerabilityAdvisorNodeInstanceType:
+    Description: ICP vulnerability advisor node AWS EC2 instance type
+    Type: String
+    Default: m5d.2xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  WorkerNodeInstanceType:
+    Description: ICP worker node AWS EC2 instance type
+    Type: String
+    Default: m5d.xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+      - m5d.4xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  WorkerNodeCount:
+    Description: >-
+      Number of worker nodes (desired capacity) to be deployed in the ICP cluster.
+    Type: Number
+    Default: 2
+
+  X509CommonName:
+    Description: >-
+      Name to use for CN attribute of the X.509 certificate that gets generated as part of the ICP configuration.  TBD: May be eliminated.  ClusterCADomain is the same thing.
+    Type: String
+    Default: ''
+
+Mappings:
+  # See https://cloud-images.ubuntu.com/locator/ec2/
+  # Builds needed that support HVM, Elastic Network Adapter (ENA)
+  # in order to use the MD5 instance types.
+  # TODO - Update EU an AP
+  AWSRegionAMIEC2:
+    us-east-1:
+      Ubuntu16: ami-ef151d90
+    us-east-2:
+      Ubuntu16: ami-dad5efbf
+    us-west-1:
+      Ubuntu16: ami-d8b05cbb
+    us-west-2:
+      Ubuntu16: ami-1cc69e64
+    eu-west-1:
+      Ubuntu16: ami-844e0bf7
+    eu-central-1:
+      Ubuntu16: ami-a9a557c6
+    ap-northeast-1:
+      Ubuntu16: ami-d82efcb9
+    ap-southeast-1:
+      Ubuntu16: ami-d554f1b6
+    ap-southeast-2:
+      Ubuntu16: ami-0bc1f168
+
+Resources:
+
+  IBMCloudPrivateVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      # TODO - parameterize the CidrBlock
+      CidrBlock: 10.0.0.0/16
+      # Enabling DNS is required to resolve host names.
+      # The VPC DNS will include all hosts in its CidrBlock
+      # The VPC DNS is not to be confused with the Route53 DNS service.
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      # TBD - Need for Name tag? If not, wasting a variable and characters.
+      Tags:
+        - Key: Name
+          Value: !Ref VPCName
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: !Sub kubernetes.io/cluster/${AWS::StackName}
+          Value: !Ref AWS::StackName
+
+  ICPClusterSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref ClusterSubnetCidr
+      VpcId: !Ref IBMCloudPrivateVPC
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  ICPInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: ICPInternetGateway
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: !Sub kubernetes.io/cluster/${AWS::StackName}
+          Value: !Ref AWS::StackName
+
+  ICPGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      InternetGatewayId: !Ref ICPInternetGateway
+
+  ICPRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  ICPPublicRoute:
+    # This Route allows outbound traffic to the Internet
+    # for the VMs deployed on the ICP cluster network.
+    Type: AWS::EC2::Route
+    DependsOn:
+      - ICPSubnetRouteTableAssociation
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId: !Ref ICPRouteTable
+      GatewayId: !Ref ICPInternetGateway
+
+  ICPSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ICPRouteTable
+      SubnetId: !Ref ICPClusterSubnet
+
+
+  ClusterHostedZone:
+    Type: AWS::Route53::HostedZone
+    Properties:
+      HostedZoneConfig:
+        Comment: >-
+          Private hosted zone for use by the deployed IBM Cloud Private cluster.
+      Name: !Ref ClusterDomain
+      VPCs:
+        - VPCId: !Ref IBMCloudPrivateVPC
+          VPCRegion: !Ref AWS::Region
+      HostedZoneTags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+
+  MasterNodeLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: network
+      Subnets:
+        - !Ref ICPClusterSubnet
+      Tags:
+          # Name tag is needed by the scripting to get config parameter
+          # value for the cluster_lb_address
+        - Key: Name
+          Value: MasterNodeLoadBalancer
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: !Sub kubernetes.io/cluster/${AWS::StackName}
+          Value: !Ref AWS::StackName
+
+
+  MasterNode8443TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8443
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNode8001TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8001
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNode9443TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 9443
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNode8500TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8500
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNodeLoadBalancer8443Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode8443TargetGroup
+      Port: 8443
+      Protocol: TCP
+
+  MasterNodeLoadBalancer8001Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode8001TargetGroup
+      Port: 8001
+      Protocol: TCP
+
+  MasterNodeLoadBalancer9443Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode9443TargetGroup
+      Port: 9443
+      Protocol: TCP
+
+  MasterNodeLoadBalancer8500Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode8500TargetGroup
+      Port: 8500
+      Protocol: TCP
+
+  ProxyNodeLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: network
+      Subnets:
+        - !Ref ICPClusterSubnet
+      Tags:
+          # Name tag is needed by the scripting to get config parameter
+          # value for the proxy_lb_address
+        - Key: Name
+          Value: ProxyNodeLoadBalancer
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: !Sub kubernetes.io/cluster/${AWS::StackName}
+          Value: !Ref AWS::StackName
+
+  ProxyNode80TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 80
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  ProxyNode443TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 443
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  ProxyNodeLoadBalancer80Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ProxyNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ProxyNode80TargetGroup
+      Port: 80
+      Protocol: TCP
+
+  ProxyNodeLoadBalancer443Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ProxyNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ProxyNode443TargetGroup
+      Port: 443
+      Protocol: TCP
+
+
+  ExternalApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: >-
+        Security group enabling external access to the ICP Proxy ingress controller
+      SecurityGroupIngress:
+        - Description: Application ingress controller (HTTPS)
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref ExternalApplicationLocation
+        - Description: Application ingress controller (HTTP)
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref ExternalApplicationLocation
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+
+  ExternalICPAdminSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: >-
+        Security group enabling external access to the ICP management console
+      SecurityGroupIngress:
+        - Description: Management console (HTTPS)
+          IpProtocol: tcp
+          FromPort: 8443
+          ToPort: 8443
+          CidrIp: !Ref ExternalICPAdminLocation
+        - Description: Management console (HTTP)
+          IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref ExternalICPAdminLocation
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+
+  ExternalSSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: >-
+        Security group enabling external SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref ExternalSSHLocation
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  InternalSSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: >-
+        Security group enabling internal SSH access from the boot node to the cluster member nodes
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref ClusterSubnetCidr
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  InternalICPSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: >-
+        Security group enabling network traffic among the ICP components deployed in the cluster, e.g., Calico, etcd, Kubernetes API server, MongoDB, etc.
+      SecurityGroupIngress:
+        - Description: Alert manager
+          IpProtocol: tcp
+          FromPort: 9093
+          ToPort: 9093
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Calico 179
+          IpProtocol: tcp
+          FromPort: 179
+          ToPort: 179
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Calico 9099
+          IpProtocol: tcp
+          FromPort: 9099
+          ToPort: 9099
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: collectd exporter
+          IpProtocol: tcp
+          FromPort: 9103
+          ToPort: 9103
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Elasticsearch 9200
+          IpProtocol: tcp
+          FromPort: 9200
+          ToPort: 9200
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Elasticsearch 9300
+          IpProtocol: tcp
+          FromPort: 9300
+          ToPort: 9300
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Elasticsearch exporter
+          IpProtocol: tcp
+          FromPort: 9108
+          ToPort: 9108
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: etcd 2380
+          IpProtocol: tcp
+          FromPort: 2380
+          ToPort: 2380
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: etcd 4001
+          IpProtocol: tcp
+          FromPort: 4001
+          ToPort: 4001
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Grafana
+          IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Heapster (8082)
+          IpProtocol: tcp
+          FromPort: 8082
+          ToPort: 8082
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Heapster (8084)
+          IpProtocol: tcp
+          FromPort: 8084
+          ToPort: 8084
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Helm
+          IpProtocol: tcp
+          FromPort: 31030
+          ToPort: 31031
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Image manager 8500
+          IpProtocol: tcp
+          FromPort: 8500
+          ToPort: 8500
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Image manager 8600
+          IpProtocol: tcp
+          FromPort: 8600
+          ToPort: 8600
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Ingress service (HTTP)
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Ingress service (HTTPS)
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Istio 31380
+          IpProtocol: tcp
+          FromPort: 31380
+          ToPort: 31380
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Istio 31390
+          IpProtocol: tcp
+          FromPort: 31390
+          ToPort: 31390
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Kibana
+          IpProtocol: tcp
+          FromPort: 5601
+          ToPort: 5601
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Kubernetes API server
+          IpProtocol: tcp
+          FromPort: 8001
+          ToPort: 8001
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Kubernetes 10248 - 10252
+          IpProtocol: tcp
+          FromPort: 10248
+          ToPort: 10252
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Kubernetes 30000 - 32767 (UDP)
+          IpProtocol: udp
+          FromPort: 30000
+          ToPort: 32767
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Kubernetes 30000 - 32767 (UDP)
+          IpProtocol: tcp
+          FromPort: 30000
+          ToPort: 32767
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Logstash
+          IpProtocol: tcp
+          FromPort: 5044
+          ToPort: 5044
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Management console (HTTP)
+          IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Management console (HTTPS)
+          IpProtocol: tcp
+          FromPort: 8443
+          ToPort: 8443
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Mariadb
+          IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Mariadb Galera 4567-4568
+          IpProtocol: tcp
+          FromPort: 4567
+          ToPort: 4568
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Mariadb Galera 4444
+          IpProtocol: tcp
+          FromPort: 4444
+          ToPort: 4444
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Metering server
+          IpProtocol: tcp
+          FromPort: 31443
+          ToPort: 31443
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Metering server on Master or Management node(s)
+          IpProtocol: tcp
+          FromPort: 9443
+          ToPort: 9443
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Mongo DB on the Master node(s)
+          IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Node exporter
+          IpProtocol: tcp
+          FromPort: 9100
+          ToPort: 9100
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: platform-api
+          IpProtocol: tcp
+          FromPort: 6969
+          ToPort: 6969
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: platform-auth-service
+          IpProtocol: tcp
+          FromPort: 3100
+          ToPort: 3100
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: platform-deploy
+          IpProtocol: tcp
+          FromPort: 4242
+          ToPort: 4242
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Prometheus
+          IpProtocol: tcp
+          FromPort: 9090
+          ToPort: 9090
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Rescheduler
+          IpProtocol: tcp
+          FromPort: 9235
+          ToPort: 9235
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Rook-Ceph 8124
+          IpProtocol: tcp
+          FromPort: 8124
+          ToPort: 8124
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: Rook-Ceph 6789-7300
+          IpProtocol: tcp
+          FromPort: 6789
+          ToPort: 7300
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: service-catalog-api-server
+          IpProtocol: tcp
+          FromPort: 30443
+          ToPort: 30443
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: strongSwan IPsec 500 (UDP)
+          IpProtocol: udp
+          FromPort: 500
+          ToPort: 500
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: strongSwan IPsec 500 (TCP)
+          IpProtocol: tcp
+          FromPort: 500
+          ToPort: 500
+          CidrIp: !Ref ClusterSubnetCidr
+
+        - Description: strongSwan IPsec 4500
+          IpProtocol: tcp
+          FromPort: 4500
+          ToPort: 4500
+          CidrIp: !Ref ClusterSubnetCidr
+
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  IAMResources:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+        - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${TemplatePath}
+        - { ScriptBucketName: !Ref ICPScriptBucketName, TemplatePath: !Ref ICPIAMTemplatePath }
+      Parameters:
+        ICPArchiveBucketName: !Ref ICPArchiveBucketName
+        ICPScriptBucketName: !Ref ICPScriptBucketName
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        RootStackId: !Ref AWS::StackId
+        RootStackName: !Ref AWS::StackName
+
+  BootNode:
+    Type: AWS::CloudFormation::Stack
+    # Need to wait for IAMResources to import its exports
+    DependsOn:
+      - IAMResources
+    Properties:
+      TemplateURL: !Sub
+        - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${TemplatePath}
+        - { ScriptBucketName: !Ref ICPScriptBucketName, TemplatePath: !Ref ICPBootNodeTemplatePath }
+      Parameters:
+        BootNodeInstanceType: !Ref BootNodeInstanceType
+        ClusterCADomain: !Ref ClusterCADomain
+        DockerInstallBinaryPath: !Ref DockerInstallBinaryPath
+        ExternalSSHLocation: !Ref ExternalSSHLocation
+        FixpackFileName: !Ref FixpackFileName
+        FixpackInceptionImageName: !Ref FixpackInceptionImageName
+        FixpackInstallCommandString: !Ref FixpackInstallCommandString
+        IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
+        ICPArchiveBucketName: !Ref ICPArchiveBucketName
+        ICPArchivePath: !Ref ICPArchivePath
+        ICPBootNodeScriptPackagePath: !Ref ICPBootNodeScriptPackagePath
+        ICPClusterSubnet: !Ref ICPClusterSubnet
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        ICPHostProfile: !GetAtt IAMResources.Outputs.ICPHostProfile
+        ICPRootRole: !GetAtt IAMResources.Outputs.ICPRootRole
+        ICPScriptBucketName: !Ref ICPScriptBucketName
+        ICPVersion: !Ref ICPVersion
+        InceptionImageName: !Ref InceptionImageName
+        InceptionInstallCommandString: !Ref InceptionInstallCommandString
+        InstallICPFixpack: !Ref InstallICPFixpack
+        KeyName: !Ref KeyName
+        LoadICPImagesLocally: !Ref LoadICPImagesLocally
+        ResourceOwner: !Ref ResourceOwner
+        RootStackId: !Ref AWS::StackId
+        RootStackName: !Ref AWS::StackName
+        S3ICPFixpackExecutablePath: !Ref S3ICPFixpackExecutablePath
+        S3ICPInceptionFixpackPath: !Ref S3ICPInceptionFixpackPath
+        ServiceCIDR: !Ref ServiceCIDR
+        UsePrivateRegistry: !Ref UsePrivateRegistry
+
+  MasterNodeStack:
+    Type: AWS::CloudFormation::Stack
+    # Need to wait for IAMResources to import its exports
+    DependsOn:
+      - IAMResources
+    Properties:
+      TemplateURL: !Sub
+         - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${TemplatePath}
+         - { ScriptBucketName: !Ref ICPScriptBucketName, TemplatePath: !Ref ICPMasterNodeTemplatePath }
+      Parameters:
+        ClusterSubnetCidr: !Ref ClusterSubnetCidr
+        DockerInstallBinaryPath: !Ref DockerInstallBinaryPath
+        ExternalICPAdminSecurityGroup: !Ref ExternalICPAdminSecurityGroup
+        ExternalSSHSecurityGroup: !Ref ExternalSSHSecurityGroup
+        IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
+        ICPArchiveBucketName: !Ref ICPArchiveBucketName
+        ICPArchivePath: !Ref ICPArchivePath
+        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
+        ICPClusterSubnet: !Ref ICPClusterSubnet
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        ICPGatewayAttachment: !Ref ICPGatewayAttachment
+        ICPHostProfile: !GetAtt IAMResources.Outputs.ICPHostProfile
+        ICPRootRole: !GetAtt IAMResources.Outputs.ICPRootRole
+        ICPScriptBucketName: !Ref ICPScriptBucketName
+        InternalICPSecurityGroup: !Ref InternalICPSecurityGroup
+        InternalSSHSecurityGroup: !Ref InternalSSHSecurityGroup
+        KeyName: !Ref KeyName
+        MasterNode8001TargetGroup: !Ref MasterNode8001TargetGroup
+        MasterNode8443TargetGroup: !Ref MasterNode8443TargetGroup
+        MasterNode8500TargetGroup: !Ref MasterNode8500TargetGroup
+        MasterNode9443TargetGroup: !Ref MasterNode9443TargetGroup
+        MasterNodeCount: !Ref MasterNodeCount
+        MasterNodeInstanceType: !Ref MasterNodeInstanceType
+        ResourceOwner: !Ref ResourceOwner
+        RootStackId: !Ref AWS::StackId
+        RootStackName: !Ref AWS::StackName
+
+  ManagementNodeStack:
+    Type: AWS::CloudFormation::Stack
+    # Need to wait for IAMResources to import its exports
+    DependsOn:
+      - IAMResources
+    Properties:
+      TemplateURL: !Sub
+         - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${TemplatePath}
+         - { ScriptBucketName: !Ref ICPScriptBucketName, TemplatePath: !Ref ICPManagementNodeTemplatePath }
+      Parameters:
+        ClusterSubnetCidr: !Ref ClusterSubnetCidr
+        DockerInstallBinaryPath: !Ref DockerInstallBinaryPath
+        ExternalSSHSecurityGroup: !Ref ExternalSSHSecurityGroup
+        IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
+        ICPArchiveBucketName: !Ref ICPArchiveBucketName
+        ICPArchivePath: !Ref ICPArchivePath
+        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
+        ICPClusterSubnet: !Ref ICPClusterSubnet
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        ICPGatewayAttachment: !Ref ICPGatewayAttachment
+        ICPHostProfile: !GetAtt IAMResources.Outputs.ICPHostProfile
+        ICPRootRole: !GetAtt IAMResources.Outputs.ICPRootRole
+        ICPScriptBucketName: !Ref ICPScriptBucketName
+        InternalICPSecurityGroup: !Ref InternalICPSecurityGroup
+        InternalSSHSecurityGroup: !Ref InternalSSHSecurityGroup
+        KeyName: !Ref KeyName
+        ManagementNodeCount: !Ref ManagementNodeCount
+        ManagementNodeInstanceType: !Ref ManagementNodeInstanceType
+        ResourceOwner: !Ref ResourceOwner
+        RootStackId: !Ref AWS::StackId
+        RootStackName: !Ref AWS::StackName
+
+  ProxyNodeStack:
+    Type: AWS::CloudFormation::Stack
+    # Need to wait for IAMResources to import its exports
+    DependsOn:
+      - IAMResources
+    Properties:
+      TemplateURL: !Sub
+         - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${TemplatePath}
+         - { ScriptBucketName: !Ref ICPScriptBucketName, TemplatePath: !Ref ICPProxyNodeTemplatePath }
+      Parameters:
+        ClusterSubnetCidr: !Ref ClusterSubnetCidr
+        DockerInstallBinaryPath: !Ref DockerInstallBinaryPath
+        ExternalApplicationSecurityGroup: !Ref ExternalApplicationSecurityGroup
+        ExternalSSHSecurityGroup: !Ref ExternalSSHSecurityGroup
+        IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
+        ICPArchiveBucketName: !Ref ICPArchiveBucketName
+        ICPArchivePath: !Ref ICPArchivePath
+        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
+        ICPClusterSubnet: !Ref ICPClusterSubnet
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        ICPGatewayAttachment: !Ref ICPGatewayAttachment
+        ICPHostProfile: !GetAtt IAMResources.Outputs.ICPHostProfile
+        ICPRootRole: !GetAtt IAMResources.Outputs.ICPRootRole
+        ICPScriptBucketName: !Ref ICPScriptBucketName
+        InternalICPSecurityGroup: !Ref InternalICPSecurityGroup
+        InternalSSHSecurityGroup: !Ref InternalSSHSecurityGroup
+        KeyName: !Ref KeyName
+        ProxyNode80TargetGroup: !Ref ProxyNode80TargetGroup
+        ProxyNode443TargetGroup: !Ref ProxyNode443TargetGroup
+        ProxyNodeCount: !Ref ProxyNodeCount
+        ProxyNodeInstanceType: !Ref ProxyNodeInstanceType
+        ResourceOwner: !Ref ResourceOwner
+        RootStackId: !Ref AWS::StackId
+        RootStackName: !Ref AWS::StackName
+
+
+  WorkerNodeStack:
+    Type: AWS::CloudFormation::Stack
+    # Need to wait for IAMResources to import its exports
+    DependsOn:
+      - IAMResources
+    Properties:
+      TemplateURL: !Sub
+         - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${TemplatePath}
+         - { ScriptBucketName: !Ref ICPScriptBucketName, TemplatePath: !Ref ICPWorkerNodeTemplatePath }
+      Parameters:
+        ClusterSubnetCidr: !Ref ClusterSubnetCidr
+        DockerInstallBinaryPath: !Ref DockerInstallBinaryPath
+        ExternalSSHSecurityGroup: !Ref ExternalSSHSecurityGroup
+        IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
+        ICPArchiveBucketName: !Ref ICPArchiveBucketName
+        ICPArchivePath: !Ref ICPArchivePath
+        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
+        ICPClusterSubnet: !Ref ICPClusterSubnet
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        ICPGatewayAttachment: !Ref ICPGatewayAttachment
+        ICPHostProfile: !GetAtt IAMResources.Outputs.ICPHostProfile
+        ICPRootRole: !GetAtt IAMResources.Outputs.ICPRootRole
+        ICPScriptBucketName: !Ref ICPScriptBucketName
+        InternalICPSecurityGroup: !Ref InternalICPSecurityGroup
+        InternalSSHSecurityGroup: !Ref InternalSSHSecurityGroup
+        KeyName: !Ref KeyName
+        WorkerNodeCount: !Ref WorkerNodeCount
+        WorkerNodeInstanceType: !Ref WorkerNodeInstanceType
+        ResourceOwner: !Ref ResourceOwner
+        RootStackId: !Ref AWS::StackId
+        RootStackName: !Ref AWS::StackName
+
+Outputs:
+  MasterNodeLoadBalancerName:
+    Description: The DNS name of the ICP Master node Elastic Load Balancer.
+    Value: !GetAtt MasterNodeLoadBalancer.DNSName
+
+  ProxyNodeLoadBalancerName:
+    Description: The DNS name of the ICP Proxy node Elastic Load Balancer.
+    Value: !GetAtt ProxyNodeLoadBalancer.DNSName
+
+  StackIds:
+    Description: List of resource IDs for the all of the nested stacks
+    # CFN doesn't handle actual lists in value of an Output
+    Value: !Join
+      - ','
+      - - !GetAtt IAMResources.Outputs.StackId
+        - !GetAtt BootNode.Outputs.StackId
+        - !GetAtt MasterNodeStack.Outputs.StackId
+        - !GetAtt ManagementNodeStack.Outputs.StackId
+        - !GetAtt ProxyNodeStack.Outputs.StackId
+        - !GetAtt WorkerNodeStack.Outputs.StackId

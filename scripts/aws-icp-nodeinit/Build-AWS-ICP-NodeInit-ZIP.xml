@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project default="CreateScriptPackage" name="Build-AWS-ICP-NodeInit">
+
+	<!-- Target OS determines what gets put into the script package archive. -->
+	<property name="TargetOS" value="ubuntu" />
+
+	<!-- Main Python script name. File extension not needed. -->
+	<property name="MainPythonScript" value="nodeinit" />
+
+	<property name="WorkspaceHome" value="${user.home}/workspaces/AWS-ICP-Quickstart" />
+	<property name="RepoHome" value="${user.home}/git/aws-icp-quickstart" />
+	<property name="StagingAreaHome" value="${user.home}/AWS-ICP-Quickstart" />
+	<property name="StagingArea" value="${StagingAreaHome}/aws-icp-nodeinit" />
+	<property name="AWSRegions" value="s3://aws-icp-quickstart-us-west,s3://aws-icp-quickstart-us-east" />
+	<property name="SharedShellScripts" value="${WorkspaceHome}/SharedShellScripts" />
+
+	<property name="ScriptPackageName" value="aws-icp-nodeinit" />
+	<property name="ScriptPackageVersion" value="0.0.1" />
+	<property name="ScriptPackageArchive" value="${ScriptPackageName}-v${ScriptPackageVersion}.zip" />
+
+	<property name="ProjectSourceDirectory" value="${RepoHome}/aws-icp-nodeinit" />
+	<property name="YAPythonLibrary" value="${RepoHome}/YAPythonLibrary" />
+
+	<property name="debug" value="true" />
+
+
+	<!--
+	  ant-contrib has various useful tasks such as <if> <then> <else> and <for>.
+	  To configure Eclipse to run the ant-contrib tasks you need to edit the Ant
+	  Runtime (under Eclipse > Preferences > Ant > Runtime).  Select the Classpath
+	  tab and then select one of the various top level classpath entries, e.g., 
+	  "Ant Home Entries", "Global Entries", "Contributed Entries".  At that point
+	  the buttons on the right of the dialog window should be enabled.  Click on 
+	  "Add External JAR" and browse to where ant-contrib-{version}.jar is located.
+	  (If Ant is installed on your machine, you likely put ant-contrib in ANT_HOME/lib. 
+	   I added the ant-contib JAR to the "Ant Home Entries" classpath.)
+	   
+	   MacOS Notes:
+	   On MacOS, If you don't have it already, install Homebrew. (See https://brew.sh/)
+	   Use Homebrew to install Ant (brew install ant).  
+	   Use Homebrew to install ant-contrib (brew install ant-contrib).  
+	   Configure Eclipse to point to the ant-contrib jar in: 
+	   /usr/local/Cellar/ant-contrib/1.0b3/share/ant/ant-contrib-1.0b3.jar.
+	   When you get to the point where you are adding the external JAR to the 
+	   Ant Home Entries, hit Command-Shift-G ant you will get a pop-up window
+	   where you can enter a raw path.  On the Mac, the root directory is not
+	   visible in the Finder browser, so you need the Command-Shift-G trick to 
+	   provide the path to the ant-contrib jar.
+	-->
+	<taskdef resource="net/sf/antcontrib/antlib.xml" />
+
+	<!-- Ant tasks for working with AWS S3 and other services. 
+	     taskdefs.xml is in the aws ant task jar
+	-->
+	<taskdef resource="taskdefs.xml" classpath="${user.home}/aws/aws-java-sdk-ant-tasks-1.2.3.jar" />
+
+	<target name="init">
+		<tstamp />
+	</target>
+
+
+	<target name="CheckStagingAreaDirectoryExists" depends="init">
+		<available property="stagingarea.exists" file="${StagingArea}" type="dir" />
+	</target>
+
+
+	<target name="CreateStagingArea" depends="CheckStagingAreaDirectoryExists" unless="stagingarea.exists">
+		<mkdir dir="${StagingArea}" />
+		<echo message="Created staging area directory: ${StagingArea}" />
+	</target>
+
+
+	<target name="ExportScripts" depends="CreateStagingArea">
+
+		<!-- 
+       Copy the project directory tree to the staging directory.
+       Exclude various Eclipse meta-data files and Ant build scripts.
+    -->
+		<copy toDir="${StagingArea}">
+			<fileset dir="${ProjectSourceDirectory}">
+				<exclude name=".project" />
+				<exclude name=".pydevproject" />
+				<exclude name="Build-AWS-ICP-NodeInit-*.xml" />
+				<include name="nodeinit.*" />
+			</fileset>
+		</copy>
+
+		<!-- 
+       Copy shared shell scripts to the staging directory. 
+       traceFunctions.sh is always one of the shared modules.
+       A given script package may need others such as propertyFileFunctions.sh, etc.
+    -->
+		<copy toDir="${StagingArea}">
+			<fileset dir="${SharedShellScripts}">
+				<include name="traceFunctions.sh" />
+				<include name="fileFunctions.sh" />
+			</fileset>
+		</copy>
+
+		<!-- Copy the needed parts of the YAPL library. -->
+		<copy toDir="${StagingArea}">
+			<fileset dir="${YAPythonLibrary}">
+				<include name="yapl/__init__.py" />
+				<include name="yapl/utilities/*.py" />
+				<include name="yapl/exceptions/*.py" />
+				<include name="yapl/json/*.py" />
+			</fileset>
+		</copy>
+
+		<!-- Put the version number message in the main script. -->
+		<replace token="@{VERSION}" value="${ScriptPackageVersion}" file="${StagingArea}/${MainPythonScript}.py" />
+
+		<!-- The copy task doesn't preserve permissions of files copied.  
+		 The target file permissions are based on UMASK value. 
+    -->
+		<apply executable="chmod">
+			<arg value="+x" />
+			<fileset dir="${StagingArea}">
+				<include name="*.py" />
+				<include name="*.sh" />
+			</fileset>
+		</apply>
+
+	</target>
+
+
+	<target name="CreateScriptPackage" depends="ExportScripts">
+		<delete file="${StagingArea}/${ScriptPackageArchive}" />
+
+		<zip destfile="${StagingArea}/${ScriptPackageArchive}" duplicate="preserve">
+			<fileset dir="${StagingArea}" includes="**/*.*" />
+		</zip>
+
+	</target>
+
+	<!-- Getting an error when this is attempted
+	<target name="DeployScriptPackage" depends="CreateScriptPackage">
+    <upload-to-s3 bucketName="aws-icp-quickstart-us-east">
+      <fileset file="${StagingArea}/${ScriptPackageArchive}" />
+    </upload-to-s3>
+
+		<upload-to-s3 bucketName="aws-icp-quickstart-us-west">
+			<fileset file="${StagingArea}/${ScriptPackageArchive}" />
+		</upload-to-s3>		
+	</target>
+	-->
+  <target name="DeployScriptPackage" depends="CreateScriptPackage">
+    <for list="${AWSRegions}" param="AWSRegion" parallel="true">
+      <sequential>
+        <exec executable="/usr/local/bin/aws">
+          <arg value="s3" />
+          <arg value="cp" />
+          <arg value="${StagingArea}/${ScriptPackageArchive}" />
+          <arg value="@{AWSRegion}/scripts/${ScriptPackageArchive}" />
+        </exec>
+      </sequential>
+    </for>
+  </target>
+
+	<target name="clean">
+		<echo message="Cleaning the staging area" />
+		<delete dir="${StagingArea}" />
+	</target>
+
+</project>
+
