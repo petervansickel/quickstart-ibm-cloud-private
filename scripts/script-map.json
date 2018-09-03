@@ -1,0 +1,13 @@
+{
+  "scripts": [
+    {
+      "name": "partition-disk",
+      "description": "Script to partition the given disk",
+      "executable": "storage/partition-disk.sh",
+      "cmdline-args": { "--device": "/dev/sdf" },
+      "env-vars": { "TGTDEV": "/dev/sdf" },
+      "run-as": "root"
+    }
+  ]
+
+}
