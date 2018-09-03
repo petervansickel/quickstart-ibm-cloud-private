@@ -1,0 +1,586 @@
+###############################################################################
+# Licensed Material - Property of IBM
+# 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+# DISCLAIMER:
+# The following source code is sample code created by IBM Corporation.
+# This sample code is provided to you solely for the purpose of assisting you
+# in the  use of  the product. The code is provided 'AS IS', without warranty or
+# condition of any kind. IBM shall not be liable for any damages arising out of
+# your use of the sample code, even if IBM has been advised of the possibility
+# of such damages.
+###############################################################################
+
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template defines the IAM resources used by the root template
+  and all other stack templates used to deploy the IBM Cloud Private cluster.
+
+Parameters:
+
+  ExternalApplicationLocation:
+    Description: >-
+      The ExternalApplicationLocation recource ID from the parent template.
+    Type: String
+
+  ExternalICPAdminLocation:
+    Description: >-
+      The ExternalICPAdminLocation resource ID from the parent template.
+    Type: String
+
+  ExternalSSHLocation:
+    Description: >-
+      The ExternalSSHLocation resource ID from the parent template.
+    Type: String
+
+  IBMCloudPrivateVPC:
+    Description: >-
+      The IBMCloudePrivateVPC resource ID from the parent template.
+    Type: String
+
+  ICPArchiveBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP install archive and Docker install binary is located.
+    Type: String
+
+  ICPDeploymentLogsBucketName:
+    Description: >-
+      The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
+    Type: String
+
+  ICPScriptBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP boostrap script packages are located.
+    Type: String
+
+  ResourceOwner:
+    Description: >-
+      Value for the owner tag for the deployed resources associated with the stack.
+    Type: String
+
+  ClusterVPCSubnetCIDR:
+    Description: >-
+      The ClusterVPCSubnetCIDR resource reference used in defining security groups.
+    Type: String
+
+Resources:
+
+  ICPHostProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref ICPRootRole
+
+  ICPRootRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: ICPBucketAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            # ListBucket is useful to avoid 403 errors that are really 404 errors
+            Statement:
+              - Action:
+                  - 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${ICPArchiveBucketName}'
+                Effect: Allow
+              - Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${ICPArchiveBucketName}/*'
+                Effect: Allow
+              - Action:
+                  - 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${ICPScriptBucketName}'
+                Effect: Allow
+              - Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${ICPScriptBucketName}/*'
+                Effect: Allow
+              - Action:
+                  - 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${ICPDeploymentLogsBucketName}'
+                Effect: Allow
+              - Action:
+                  - 's3:PutObject'
+                Resource: !Sub 'arn:aws:s3:::${ICPDeploymentLogsBucketName}/*'
+                Effect: Allow
+
+          # From here on, the policies are needed for the bootstrap scripts
+          # to access various classes of resources to prepare for and configure
+          # the ICP installation.
+        - PolicyName: ICPCloudFormationAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - cloudformation:ListStackResources
+                  - cloudformation:DescribeStacks
+                Resource: '*'
+                Effect: Allow
+
+          # Needed for the bootstrap script introspection of the stack
+        - PolicyName: ICPAutoScalingAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                - autoscaling:DescribeAutoScalingGroups
+                Resource: '*'
+                Effect: Allow
+
+          # Needed for the bootstrap script introspection of the stack
+        - PolicyName: ICPEC2AccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - ec2:DescribeStacks
+                  - ec2:DescribeInstances
+                Effect: Allow
+                Resource: '*'
+
+        - PolicyName: ICPEC2MessagesAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - ec2messages:GetMessages
+                Effect: Allow
+                Resource: '*'
+
+        - PolicyName: ICPElastLoadBalancingAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - elasticloadbalancing:DescribeTags
+                  - elasticloadbalancing:DescribeLoadBalancers
+                Effect: Allow
+                Resource: '*'
+
+          # Needed for the bootstrap script and nodeinit script interaction
+        - PolicyName: ICPSSMAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - ssm:PutParameter
+                  - ssm:GetParameter
+                  - ssm:DeleteParameters
+                  # The following is needed for instance health check
+                  - ssm:UpdateInstanceInformation
+                  - ssm:ListAssociations
+                  - ssm:ListInstanceAssociations
+                Effect: Allow
+                Resource: '*'
+
+  ExternalApplicationSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: >-
+        Security group enabling external access to the ICP Proxy ingress controller
+      SecurityGroupIngress:
+        - Description: Application ingress controller (HTTPS)
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref ExternalApplicationLocation
+        - Description: Application ingress controller (HTTP)
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref ExternalApplicationLocation
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+
+  ExternalICPAdminSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: >-
+        Security group enabling external access to the ICP management console
+      SecurityGroupIngress:
+        - Description: Management console (HTTPS)
+          IpProtocol: tcp
+          FromPort: 8443
+          ToPort: 8443
+          CidrIp: !Ref ExternalICPAdminLocation
+        - Description: Management console (HTTP)
+          IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref ExternalICPAdminLocation
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+
+  ExternalSSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: >-
+        Security group enabling external SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref ExternalSSHLocation
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  InternalSSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: >-
+        Security group enabling internal SSH access from the boot node to the cluster member nodes
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  InternalICPSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: >-
+        Security group enabling network traffic among the ICP components deployed in the cluster, e.g., Calico, etcd, Kubernetes API server, MongoDB, etc.
+      SecurityGroupIngress:
+        - Description: Alert manager
+          IpProtocol: tcp
+          FromPort: 9093
+          ToPort: 9093
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Calico 179
+          IpProtocol: tcp
+          FromPort: 179
+          ToPort: 179
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Calico 9099
+          IpProtocol: tcp
+          FromPort: 9099
+          ToPort: 9099
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: collectd exporter
+          IpProtocol: tcp
+          FromPort: 9103
+          ToPort: 9103
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Elasticsearch 9200
+          IpProtocol: tcp
+          FromPort: 9200
+          ToPort: 9200
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Elasticsearch 9300
+          IpProtocol: tcp
+          FromPort: 9300
+          ToPort: 9300
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Elasticsearch exporter
+          IpProtocol: tcp
+          FromPort: 9108
+          ToPort: 9108
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: etcd 2380
+          IpProtocol: tcp
+          FromPort: 2380
+          ToPort: 2380
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: etcd 4001
+          IpProtocol: tcp
+          FromPort: 4001
+          ToPort: 4001
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Grafana
+          IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Heapster (8082)
+          IpProtocol: tcp
+          FromPort: 8082
+          ToPort: 8082
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Heapster (8084)
+          IpProtocol: tcp
+          FromPort: 8084
+          ToPort: 8084
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Helm
+          IpProtocol: tcp
+          FromPort: 31030
+          ToPort: 31031
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Image manager 8500
+          IpProtocol: tcp
+          FromPort: 8500
+          ToPort: 8500
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Image manager 8600
+          IpProtocol: tcp
+          FromPort: 8600
+          ToPort: 8600
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Ingress service (HTTP)
+          IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Ingress service (HTTPS)
+          IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Istio 31380
+          IpProtocol: tcp
+          FromPort: 31380
+          ToPort: 31380
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Istio 31390
+          IpProtocol: tcp
+          FromPort: 31390
+          ToPort: 31390
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Kibana
+          IpProtocol: tcp
+          FromPort: 5601
+          ToPort: 5601
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Kubernetes API server
+          IpProtocol: tcp
+          FromPort: 8001
+          ToPort: 8001
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Kubernetes 10248 - 10252
+          IpProtocol: tcp
+          FromPort: 10248
+          ToPort: 10252
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Kubernetes 30000 - 32767 (UDP)
+          IpProtocol: udp
+          FromPort: 30000
+          ToPort: 32767
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Kubernetes 30000 - 32767 (UDP)
+          IpProtocol: tcp
+          FromPort: 30000
+          ToPort: 32767
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Logstash
+          IpProtocol: tcp
+          FromPort: 5044
+          ToPort: 5044
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Management console (HTTP)
+          IpProtocol: tcp
+          FromPort: 8080
+          ToPort: 8080
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Management console (HTTPS)
+          IpProtocol: tcp
+          FromPort: 8443
+          ToPort: 8443
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Mariadb
+          IpProtocol: tcp
+          FromPort: 3306
+          ToPort: 3306
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Mariadb Galera 4567-4568
+          IpProtocol: tcp
+          FromPort: 4567
+          ToPort: 4568
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Mariadb Galera 4444
+          IpProtocol: tcp
+          FromPort: 4444
+          ToPort: 4444
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Metering server
+          IpProtocol: tcp
+          FromPort: 31443
+          ToPort: 31443
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Metering server on Master or Management node(s)
+          IpProtocol: tcp
+          FromPort: 9443
+          ToPort: 9443
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Mongo DB on the Master node(s)
+          IpProtocol: tcp
+          FromPort: 27017
+          ToPort: 27017
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Node exporter
+          IpProtocol: tcp
+          FromPort: 9100
+          ToPort: 9100
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: platform-api
+          IpProtocol: tcp
+          FromPort: 6969
+          ToPort: 6969
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: platform-auth-service
+          IpProtocol: tcp
+          FromPort: 3100
+          ToPort: 3100
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: platform-deploy
+          IpProtocol: tcp
+          FromPort: 4242
+          ToPort: 4242
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Prometheus
+          IpProtocol: tcp
+          FromPort: 9090
+          ToPort: 9090
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Rescheduler
+          IpProtocol: tcp
+          FromPort: 9235
+          ToPort: 9235
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Rook-Ceph 8124
+          IpProtocol: tcp
+          FromPort: 8124
+          ToPort: 8124
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: Rook-Ceph 6789-7300
+          IpProtocol: tcp
+          FromPort: 6789
+          ToPort: 7300
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: service-catalog-api-server
+          IpProtocol: tcp
+          FromPort: 30443
+          ToPort: 30443
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: strongSwan IPsec 500 (UDP)
+          IpProtocol: udp
+          FromPort: 500
+          ToPort: 500
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: strongSwan IPsec 500 (TCP)
+          IpProtocol: tcp
+          FromPort: 500
+          ToPort: 500
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+        - Description: strongSwan IPsec 4500
+          IpProtocol: tcp
+          FromPort: 4500
+          ToPort: 4500
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+# PVS: Experimented with Export, but for the ICP deployment
+# using Outputs is easier and more appropriate given the topology.
+# Outputs in alphabetical order
+Outputs:
+  ExternalApplicationSecurityGroup:
+    Description: >-
+      ExternalApplicationSecurityGroup resource ID for use by parent stack template.
+    Value: !Ref ExternalApplicationSecurityGroup
+
+  ExternalICPAdminSecurityGroup:
+    Description: >-
+      ExternalICPAdminSecurityGroup resource ID for use by parent stack template.
+    Value: !Ref ExternalICPAdminSecurityGroup
+
+  ExternalSSHSecurityGroup:
+    Description: >-
+      ExternalSSHSecurityGroup resource ID for use by the parent stack template.
+    Value: !Ref ExternalSSHSecurityGroup
+
+  ICPHostProfile:
+    Description: >-
+      ICPHostProfile resource ID for use by parent stack template(s)
+    Value: !Ref ICPHostProfile
+
+  ICPRootRole:
+    Description: >-
+      ICPRootRole resource ID for use by parent stack templates(s)
+    Value: !Ref ICPRootRole
+
+  InternalICPSecurityGroup:
+    Description: >-
+      InternalICPSecurityGroup resource ID for use by the parent stack template.
+    Value: !Ref InternalICPSecurityGroup
+
+  InternalSSHSecurityGroup:
+    Description: >-
+      InternalSSHSecurityGroup resource ID for use by the parent stack template.
+    Value: !Ref InternalSSHSecurityGroup
+
+  StackId:
+    Description: The IAM Resources stack ID.
+    Value: !Ref AWS::StackId

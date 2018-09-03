@@ -1,0 +1,62 @@
+[
+  {
+    "ParameterKey": "VPCName",
+    "ParameterValue": "VanSickel-ICP-VPC"
+  },
+  {
+    "ParameterKey": "ResourceOwner",
+    "ParameterValue": "Peter.VanSickel"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": "pvs_key_us-west-1"
+  },
+  {
+    "ParameterKey": "ICPArchiveBucketName",
+    "ParameterValue": "icp-2-1-0-3-us-west"
+  },
+  {
+    "ParameterKey": "ICPArchivePath",
+    "ParameterValue": "ibm-cloud-private-x86_64-2.1.0.3.tar.gz"
+  },
+  {
+    "ParameterKey": "DockerInstallBinaryPath",
+    "ParameterValue": "icp-docker-17.12.1_x86_64.bin"
+  },
+  {
+    "ParameterKey": "ICPScriptBucketName",
+    "ParameterValue": "aws-icp-quickstart-us-west"
+  },
+  {
+    "ParameterKey": "ICPBootNodeScriptPackagePath",
+    "ParameterValue": "aws-icp-bootstrap-v0.0.1.zip"
+  },
+  {
+    "ParameterKey": "ICPClusterNodeScriptPackagePath",
+    "ParameterValue": "aws-icp-nodeinit-v0.0.1.zip"
+  },
+  {
+    "ParameterKey": "BootInstanceType",
+    "ParameterValue": "m5.xlarge"
+  },
+  {
+    "ParameterKey": "MasterInstanceType",
+    "ParameterValue": "m5.2xlarge"
+  },
+  {
+    "ParameterKey": "ManagementInstanceType",
+    "ParameterValue": "m5.2xlarge"
+  },
+  {
+    "ParameterKey": "ProxyInstanceType",
+    "ParameterValue": "m5.xlarge"
+  },
+  {
+    "ParameterKey": "WorkerInstanceType",
+    "ParameterValue": "m5.xlarge"
+  },
+  {
+    "ParameterKey": "ExternalSSHLocation",
+    "ParameterValue": "108.39.158.48/32"
+  }
+]

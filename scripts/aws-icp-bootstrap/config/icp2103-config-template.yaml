@@ -133,7 +133,7 @@ cloud_provider: ${CLOUD_PROVIDER}
 
 ## Disabled Management Services Settings
 ## You can disable the following management services: ["service-catalog", "metering", "monitoring", "istio", "vulnerability-advisor", "custom-metrics-adapter"]
-disabled_management_services: ["istio", "monitoring", "vulnerability-advisor", "custom-metrics-adapter"]
+disabled_management_services: ${EXCLUDED_MGMT_SERVICES}
 
 ## Docker Settings
 # docker_env: []

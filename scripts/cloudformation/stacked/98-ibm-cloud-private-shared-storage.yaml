@@ -1,0 +1,92 @@
+###############################################################################
+# Licensed Material - Property of IBM
+# 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+# DISCLAIMER:
+# The following source code is sample code created by IBM Corporation.
+# This sample code is provided to you solely for the purpose of assisting you
+# in the  use of  the product. The code is provided 'AS IS', without warranty or
+# condition of any kind. IBM shall not be liable for any damages arising out of
+# your use of the sample code, even if IBM has been advised of the possibility
+# of such damages.
+###############################################################################
+#
+# One EFS file system resource and one mount target is defined for each subnet
+# in a VPC.  The ICP deployment has a single cluster subnet which is passed in
+# to this template as a parameter.
+#
+# For documentation on EFS and how it works see:
+#  https://docs.aws.amazon.com/efs/latest/ug/how-it-works.html
+#
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template defines the EFS file system used for shared storage by the master nodes and worker nodes the IBM Cloud Private cluster.
+
+Parameters:
+  ClusterVPCSubnetCIDR:
+    Description: >-
+      The ClusterVPCSubnetCIDR resource reference used in defining the security group for access to the shared storage on EFS.
+    Type: String
+
+  ClusterVPCSubnet:
+    Description: >-
+      ClusterVPCSubnet resource ID from the parent template.
+    Type: String
+
+  IBMCloudPrivateVPC:
+    Description: >-
+      The IBMCloudePrivateVPC resource ID from the parent template.
+    Type: String
+
+  InternalSSHSecurityGroup:
+    Description: >-
+      InternalSSHSecurityGroup resource ID from the parent template.  Used by the EFS mount target.
+    Type: String
+
+  ResourceOwner:
+    Description: >-
+      Value for the owner tag for the deployed resource associated with the stack.
+    Type: String
+
+
+Resources:
+
+  ClusterSharedStorage:
+    Type: AWS::EFS::FileSystem
+    Properties:
+      PerformanceMode: generalPurpose
+      Encrypted: False
+      FileSystemTags:
+        - Key: Name
+          Value: ClusterSharedStorage
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  SharedStorageSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: Allow mounting of EFS volume on NFS port 2049.
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2049
+          ToPort: 2049
+          CidrIp: !Ref ClusterVPCSubnetCIDR
+
+  SharedStorageMountTarget:
+    Type: AWS::EFS::MountTarget
+    Properties:
+      FileSystemId: !Ref ClusterSharedStorage
+      SubnetId: !Ref ClusterVPCSubnet
+      SecurityGroups:
+        - !Ref SharedStorageSecurityGroup
+        #- !Ref InternalSSHSecurityGroup
+
+Outputs:
+  ClusterSharedStorage:
+    Description: >-
+      The EFS file system to be used for shared storage by the master nodes and worker nodes.
+    Value: !Ref ClusterSharedStorage

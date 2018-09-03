@@ -91,4 +91,4 @@ fi
 
 source ~/mystack.props
 
-~/nodeinit.py --stackid "${STACK_ID}" --stack-name ${STACK_NAME} --role ${ROLE} --logfile $LOGFILE --loglevel "*=all"
+~/nodeinit.py --region "${REGION}" --stackid "${STACK_ID}" --stack-name ${STACK_NAME} --role ${ROLE} --logfile $LOGFILE --loglevel "*=all"

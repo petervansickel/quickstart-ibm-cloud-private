@@ -51,6 +51,10 @@ History:
   
   For ICP KC doc on PKI configuration see: 
     https://www.ibm.com/support/knowledgecenter/SSBS6K_2.1.0.3/installing/create_ca_cert.html
+    
+  01 SEP 2018 - pvs - Added code to wait for the root stack to have a status of CREATE_COMPLETE.
+  In testing, hit a case where the bootnode script was getting outputs from the root stack and 
+  the outputs were empty.
 '''
 
 from Crypto.PublicKey import RSA
@@ -80,6 +84,8 @@ from yapl.docker.PrivateRegistry import PrivateRegistry
 
 ClusterHostSyncSleepTime = 60
 ClusterHostSyncMaxTryCount = 100
+StackStatusMaxWaitCount = 100
+StackStatusSleepTime = 60
 
 """
   StackParameters and StackParameterNames holds all of the CloudFormation stack parameters.  
@@ -462,8 +468,16 @@ class Bootstrap(object):
     self.pkiDirectory = os.path.join(self.icpHome,"cluster","cfc-certs")
     self.pkiFileName = 'icp-router'
     self.CN = self.getCommonName()
+
+    # Root stack ID is in position 0 of the stackIds list
+    self.stackIds = [ stackId ]
+    nestedStacks =  self._getNestedStacks(stackId)
+    if (not nestedStacks):
+      raise AWSStackResourceException("The root stack is expected to have several nested stacks, but none were found.")
+    #endIf
+    self.stackIds.extend(nestedStacks)
     
-    self._getHosts(stackId)
+    self._getHosts(self.stackIds)
 
     self._getSSMParameterKeys(stackName)
   #endDef
@@ -569,7 +583,7 @@ class Bootstrap(object):
   
   def _getNestedStacks(self, rootStackId):
     """
-      Return a list of the nested stacks for the given root stack ID.
+      Return a list of the nested stack resource IDs associated with the given root stack ID.
       
       By convention the nested stack resource IDs are provided by the CloudFormation root 
       stack template in the Outputs.  The output variable name is StackIds and it is a 
@@ -585,7 +599,7 @@ class Bootstrap(object):
     
     stacks = response.get('Stacks')
     if (len(stacks) != 1):
-      raise AWSStackResourceException("Unexpected number of stacks: %d, from describe_stacks for stack: %s" %(len(stacks),rootStackId))
+      raise AWSStackResourceException("Unexpected number of stacks: %d, from describe_stacks for stack: %s" % (len(stacks),rootStackId))
     #endIf
     
     rootStack = stacks[0]
@@ -607,7 +621,7 @@ class Bootstrap(object):
   #endDef
   
   
-  def _getHosts(self, rootStackId):
+  def _getHosts(self, stackIds):
     """
       Fill the hosts dictionary instance variable with Host objects for all the hosts in the
       cluster based on the ICPRole tag associated with each host (EC2 instance).
@@ -625,18 +639,10 @@ class Bootstrap(object):
     """
     methodName = "_getHosts"
     
-    if (not rootStackId):
-      raise InvalidArgumentException("A root stack ID (stackId) is required.")
+    if (not stackIds):
+      raise InvalidArgumentException("A non-empty list of stack IDs (stackIds) is required.")
     #endIf
- 
-    stackIds = [ rootStackId ]
-    nestedStacks = self._getNestedStacks(rootStackId)
-    if (not nestedStacks):
-      raise AWSStackResourceException("The root stack is expected to have several nested stacks, but none were found.")
-    #endIf
-    
-    stackIds.extend(nestedStacks)
-    
+     
     if (TR.isLoggable(Level.FINEST)):
       TR.finest(methodName,"StackIds: %s" % stackIds)
     #endIf
@@ -978,6 +984,52 @@ class Bootstrap(object):
   #endDef
   
 
+  def waitForStackStatus(self, stackId, desiredStatus='CREATE_COMPLETE'):
+    """
+      Return True if the given stack reaches the given desired status.
+      
+      This method is ensure that the bootnode script doesn't start doing its work until the 
+      CloudFormation engine has fully deployed the root stack template.
+      
+      An ICPInstallationException is raised if the desiredStatus is not achieved within  the
+      status wait timeout = wait_time * number_of_times_waited.
+    """
+    methodName = 'waitForStackStatus'
+    
+    reachedDesiredStatus = False
+    waitCount = 1
+    while (not reachedDesiredStatus and waitCount <= StackStatusMaxWaitCount):
+      TR.info(methodName,"Try: %d: Waiting for stack status: %s for stack: %s" % (waitCount,desiredStatus,stackId))
+      response = self.cfnClient.describe_stacks(StackName=stackId)
+      if (not response):
+        raise AWSStackResourceException("Empty result for CloudFormation describe_stacks for stack: %s" % stackId)
+      #endIf
+      
+      stacks = response.get('Stacks')
+      if (len(stacks) != 1):
+        raise AWSStackResourceException("Unexpected number of stacks: %d, from describe_stacks for stack: %s" % (len(stacks),stackId))
+      #endIf
+      
+      stack = stacks[0]
+      currentStatus = stack.get('StackStatus')
+      if (currentStatus == desiredStatus):
+        reachedDesiredStatus = True
+        break
+      #endIf
+      
+      TR.info(methodName,"Stack: %s current status: %s, waiting for status: %s" % (stackId,currentStatus,desiredStatus))
+      time.sleep(StackStatusSleepTime)
+    #endWhile
+    
+    if (not reachedDesiredStatus):
+      raise ICPInstallationException("Stack: %s never reached status: %s after waiting %d minutes." % (stackId,desiredStatus,(StackStatusSleepTime*StackStatusMaxWaitCount)/60))
+    #endIf
+    
+    TR.info(methodName,"Stack: %s in desired state: %s" % (stackId,desiredStatus))
+    return reachedDesiredStatus
+  #endDef
+  
+  
   def configureSSH(self):
     """
       Configure the boot node (where this script is assumed to be running) to be able to
@@ -1119,6 +1171,14 @@ class Bootstrap(object):
         - stop docker
         - start docker
         - start kubelet
+        
+      NOTE: This method was used in an attempt to clear up an early installation issue.
+      It is no longer part of the installation process and eventually can probably be 
+      deleted. 
+      TBD: It may be handy to have this method for other purposes. It is often the case that
+      a sick node can be healed with a restart of kubelet and docker. If that is the case
+      then a "target" parameter would need to be passed in and forwarded on to the Ansible
+      script.  
     """
     methodName = "restartKubeletAndDocker"
     
@@ -1182,7 +1242,7 @@ class Bootstrap(object):
     """
     methodName="createConfigFile"
     
-    configureICP = ConfigureICP(stackId=self.stackId, templatePath=self.configTemplatePath)
+    configureICP = ConfigureICP(stackIds=self.stackIds, templatePath=self.configTemplatePath)
     
     TR.info(methodName,"STARTED creating config.yaml file.")
     configureICP.createConfigFile(os.path.join(self.home,"config.yaml"))
@@ -1468,7 +1528,7 @@ class Bootstrap(object):
         #endIf
       else:
         for fileName in logFileNames:
-          s3Key = "%s/%s/%s/%s" %(stackName,self.role,self.fqdn,fileName)
+          s3Key = "%s/%s/%s/%s" % (stackName,self.role,self.fqdn,fileName)
           bodyPath = os.path.join(logsDirectoryPath,fileName)
           if (TR.isLoggable(Level.FINE)):
             TR.fine(methodName,"Exporting log: %s to S3: %s:%s" % (bodyPath,bucketName,s3Key))
@@ -1509,19 +1569,19 @@ class Bootstrap(object):
       
       stackId = cmdLineArgs.get('stackid')
       if (not stackId):
-        raise MissingArgumentException("The stack ID (--stackid) must be provided.")
+        raise MissingArgumentException("The root stack ID (--stackid) must be provided.")
       #endIf
 
-      self.stackId = stackId
-      TR.info(methodName,"Stack ID: %s" % stackId)
+      self.rootStackId = stackId
+      TR.info(methodName,"Root stack ID: %s" % stackId)
       
       stackName = cmdLineArgs.get('stack-name')
       if (not stackName):
-        raise MissingArgumentException("The stack name (--stack-name) must be provided.")
+        raise MissingArgumentException("The root stack name (--stack-name) must be provided.")
       #endIf
       
       self.stackName = stackName
-      TR.info(methodName,"Stack name: %s" % stackName)
+      TR.info(methodName,"Root stack name: %s" % stackName)
 
       role = cmdLineArgs.get('role')
       if (not role):
@@ -1531,6 +1591,11 @@ class Bootstrap(object):
       self.role = role
       TR.info(methodName,"Node role: %s" % role)
       
+      # Need to wait for the root stack to be fully deployed to get its outputs for
+      # the introspection of all the child stacks.
+      self.waitForStackStatus(stackId,desiredStatus='CREATE_COMPLETE')
+      
+      # Finish off the initialization of the bootstrap class instance
       self._init(stackId,stackName)
       
       # Using Route53 DNS server rather than /etc/hosts
@@ -1538,6 +1603,7 @@ class Bootstrap(object):
       # with the cluster IP address and all the other entries are lost.  Happens very late in the install.
       #self.createEtcHostsFile()
       #self.propagateEtcHostsFile()
+      
       self.createICPHostsFile()
       self.createAnsibleHostsFile()
       self.configureSSH()
@@ -1578,10 +1644,7 @@ class Bootstrap(object):
       else:
         self.installICP()        
       #endIf
-      
-      # Hack to clear up issues with calico configuration
-      self.restartKubeletAndDocker()
-      
+            
     except ExitException:
       pass # ExitException is used as a "goto" end of program after emitting help info
 

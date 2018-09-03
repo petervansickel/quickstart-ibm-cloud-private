@@ -1,0 +1,1540 @@
+###############################################################################
+# Licensed Material - Property of IBM
+# 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+# DISCLAIMER:
+# The following source code is sample code created by IBM Corporation.
+# This sample code is provided to you solely for the purpose of assisting you
+# in the  use of  the product. The code is provided 'AS IS', without warranty or
+# condition of any kind. IBM shall not be liable for any damages arising out of
+# your use of the sample code, even if IBM has been advised of the possibility
+# of such damages.
+###############################################################################
+#
+# NOTES:
+#  Each ICP node has an ICPRole tag that is used by the bootstrapping
+#  scripts to determine the role of the node.  The following values
+#  for the ICPRole tag and accepted (case insensitive):
+#    Master, Worker, Proxy, Management, VA, etcd
+#
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template deploys an IBM Cloud Private stack.
+  **WARNING** This template creates EC2 instances and related resources. You
+  will be billed for the AWS resources used if you create a stack from this
+  template.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: General Deployment Parameters
+        Parameters:
+          - VPCName
+          - ResourceOwner
+          - KeyName
+
+      - Label:
+          default: Deployment Control Parameters
+        Parameters:
+          - UsePrivateRegistry
+          - LoadICPImagesLocally
+          - InstallICPFixpack
+
+      - Label:
+          default: IBM Cloud Private Configuration Parameters
+        Parameters:
+          - ClusterName
+          - ClusterDomain
+          - ClusterCADomain
+          - ClusterCIDR
+          - ServiceCIDR
+
+      - Label:
+          default: Deployment Artifact Bucket Parameters
+        Parameters:
+          - ICPArchiveBucketName
+          - ICPArchivePath
+          - DockerInstallBinaryPath
+          - ICPScriptBucketName
+          - ICPBootNodeScriptPackagePath
+          - ICPClusterNodeScriptPackagePath
+          - S3ICPFixpackExecutablePath
+          - S3ICPInceptionFixpackPath
+          - ICPDeploymentLogsBucketName
+
+      - Label:
+          default: Installation Parameters
+        Parameters:
+          - InceptionImageName
+          - InceptionInstallCommandString
+          - FixpackInceptionImageName
+          - FixpackInstallCommandString
+          - FixpackFileName
+
+      - Label:
+          default: EC2 Instance Parameters
+        Parameters:
+          - BootNodeInstanceType
+          - MasterNodeInstanceType
+          - ManagementNodeInstanceType
+          - ProxyNodeInstanceType
+          - VulnerabilityAdvisorInstanceType
+          - WorkerNodeInstanceType
+
+      - Label:
+          default: IBM Cloud Private Cluster Parameters
+        Parameters:
+          - MasterNodeCount
+          - ManagementNodeCount
+          - ProxyNodeCount
+          - VulnerabilityAdvisorNodeCount
+          - WorkerNodeCount
+
+      - Label:
+          default: Network Parameters
+        Parameters:
+          - ExternalSSHLocation
+          - ExternalICPAdminLocation
+          - ExternalApplicationLocation
+          - ClusterSubNetCidr
+
+    ParameterLabels:
+      # Some attempt has been made to keep this list in aphabetical order
+      BootNodeInstanceType:
+        default: Boot Node EC2 Instance Type
+      ClusterCADomain:
+        default: Cluster CA Domain
+      ClusterCIDR:
+        default: ICP Cluster Network CIDR
+      ClusterDomain:
+        default: Cluster Domain
+      ClusterName:
+        default: Cluster Name
+      ClusterSubnetCidr:
+        default: Cluster Subnet CIDR
+      DockerInstallBinaryPath:
+        default: Docker Install Binary Path
+      ExternalApplicationLocation:
+        default: External Application Location
+      ExternalICPAdminLocation:
+        default: External ICP Admin Location
+      ExternalSSHLocation:
+        default: External SSH Location
+      FixpackIntallCommandString:
+        default: Fixpack Install Command String
+      FixpackFileName:
+        default: Fixpack File Name
+      ICPArchiveBucketName:
+        default: ICP Archive Bucket Name
+      ICPArchivePath:
+        default: ICP Archive Path
+      ICPDeploymentLogsBucketName:
+        default: ICP Deployment Logs Bucket Name
+      InstallICPFixpack:
+        default: Install ICP Fixpack
+      ICPScriptBucketName:
+        default: ICP Script Bucket Name
+      ICPBootNodeScriptPackagePath:
+        default: ICP Boot Node Script Package Path
+      ICPClusterNodeScriptPackagePath:
+        default: ICP Cluster Node Script Package Path
+      KeyName:
+        default: EC2 Key Pair Name
+      LoadICPImagesLocally:
+        default: Load ICP Images Locally
+      ManagementNodeInstanceType:
+        default: Management Node EC2 Instance Type
+      MasterNodeInstanceType:
+        default: Master Node EC2 Instance Type
+      MasterNodeCount:
+        default: Master Node Count
+      ManagementNodeCount:
+        default: Management Node Count
+      ProxyNodeInstanceType:
+        default: Proxy Node EC2 Instance Type
+      ProxyNodeCount:
+        default: Proxy Node Count
+      ResourceOwner:
+        default: Resource Owner
+      S3ICPFixpackExecutablePath:
+        default: ICP Fixpack Executable Path
+      S3ICPInceptionFixpackPath:
+        default: ICP Inception Fixpack Path
+      ServiceCIDR:
+        default: ICP Service Network CIDR
+      UsePrivateRegistry:
+        default: Use Private Registry
+      VPCName:
+        default: Virtual Private Cloud Name
+      VulnerabilityAdvisorInstanceType:
+        default: Vulnerability Advisor EC2 Instance Type
+      VulnerabilityAdvisorNodeCount:
+        default: Vulnerability Node Count
+      WorkerNodeInstanceType:
+        default: Worker Node EC2 Instance Type
+      WorkerNodeCount:
+        default: Worker Node Count
+
+Parameters:
+  # Variables are declared in alphabetical order.
+  BootNodeInstanceType:
+    Description: ICP boot node AWS EC2 instance type
+    Type: String
+    Default: m5d.xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5d.large
+      - m5d.xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  ClusterCADomain:
+    Description: >-
+      The Certificate Authority (CA) domain used for the CN in the CA key.  The default is to
+      use the cluster name concatenated with the cluster domain.
+    Type: String
+    Default: mycluster.icp.local
+
+  ClusterCIDR:
+    Description: >-
+      The CIDR for the ICP cluster overlay network.  This gets assigned to the network_cidr attribute in config.yaml.  The value provided must be a network that does not conflict with the AWS VPC network.  It also must not conflict with the ICP service overlay network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 172.16.0.0/20
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  ClusterDomain:
+    Description: >-
+      The network domain of the cluster.
+    Type: String
+    Default: icp.local
+
+  ClusterName:
+    Description: >-
+      The name of the cluster.
+    Type: String
+    Default: mycluster
+
+  ClusterSubNetCidr:
+    Description: >-
+      The CIDR for the ICP cluster subnet.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 10.0.0.0/24
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  DockerInstallBinaryPath:
+    Description: >-
+      The path to the Docker install binary in the ICP bucket.
+    Type: String
+
+  ExternalApplicationLocation:
+    Description: >-
+      The IP address range that can be used to get to ICP Proxy ELB for access to deployed workloads on the ICP worker nodes from the external network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  ExternalICPAdminLocation:
+    Description: >-
+      The IP address range that can be used to get to ICP Master ELB from the external network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  ExternalSSHLocation:
+    Description: >-
+      The IP address range that can be used to SSH to the EC2 instances from the external network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 0.0.0.0/0
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  FixpackInceptionImageName:
+    Description: >-
+      The name of the inception image used for the ICP installation when the ICP fixpack is to be installed.
+    Type: String
+    Default: "ibmcom/icp-inception:2.1.0.3-ee-fp1"
+
+  FixpackInstallCommandString:
+    Description: >-
+      The command string to use when invoking the ICP fixpack installation.
+    Type: String
+    Default: "install -v"
+
+  FixpackFileName:
+    Description: >-
+      The name of the fixpack file, e.g., ibm-cloud-private-2.1.0.3-fp1.sh.
+    Type: String
+    Default: ''
+
+  ICPArchiveBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP install archive and Docker install binary is located.
+    Type: String
+
+  ICPArchivePath:
+    Description: >-
+      The path to the ICP install archive in the ICP bucket.
+    Type: String
+
+  ICPBootNodeScriptPackagePath:
+    Description: >-
+      The path in the ICP bootstrap S3 bucket to the ICP Boot node script package (zip) file.
+    Type: String
+
+  ICPClusterNodeScriptPackagePath:
+    Description: >-
+      The path in the ICP bootstrap S3 bucket to the ICP cluster node script package (zip) file.  Cluster nodes are master, proxy, worker, management, vulnerability advisor.
+    Type: String
+
+  ICPDeploymentLogsBucketName:
+    Description: >-
+      The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
+    Type: String
+
+  ICPScriptBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP boostrap script packages are located.
+    Type: String
+
+  ICPVersion:
+    Description: >-
+      The version of ICP to be deployed.
+    Type: String
+    Default: 2.1.0.3
+
+  InceptionImageName:
+    Description: >-
+      The name of the inception image to use for the ICP installation.
+    Type: String
+
+  InceptionInstallCommandString:
+    Description: >-
+      The command string to use when invoking the ICP installation.
+    Type: String
+    Default: "install -v"
+
+  InstallICPFixpack:
+    Description: >-
+      Indicate yes to install an ICP fixpack.  Indicate no if there is no fixpack to install or the fixpack installation is to be skipped.
+    Type: String
+    Default: Yes
+    AllowedValues:
+      - Yes
+      - No
+
+  KeyName:
+    Description: >-
+      Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+
+  LoadICPImagesLocally:
+    Description: >-
+      When true, load the IBM Cloud Private images into the local Docker registry on each node using an archive extraction command run directly on each node.  When false, load the ICP images using an Ansible playbook launched from the Boot node. This variable is used for experiments in comparing different installation techniquies.
+    Type: String
+    AllowedValues:
+      - true
+      - false
+    Default: true
+
+  ManagementNodeCount:
+    Description: >-
+      Number of management nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.  The management nodes run the resource and log monitoring monitoring components, e.g., Prometheus, Grafana and the ELK stack.
+    Type: String
+    Default: 1
+
+  ManagementNodeInstanceType:
+    Description: ICP management node AWS EC2 instance type
+    Type: String
+    Default: m5d.2xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  MasterNodeCount:
+    Description: >-
+      Number of master nodes to be deployed in the ICP cluster. Must be an odd number. For a development deployment 1 is sufficient. For production deployments typically 3 or 5.
+    Type: String
+    Default: 1
+
+  MasterNodeInstanceType:
+    Description: ICP master node AWS EC2 instance type
+    Type: String
+    Default: m5d.2xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  ProxyNodeCount:
+    Description: >-
+      Number of proxy nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.
+    Type: String
+    Default: 1
+
+  ProxyNodeInstanceType:
+    Description: ICP worker node AWS EC2 instance type
+    Type: String
+    Default: m5d.xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  ResourceOwner:
+    Description: >-
+      Value for the owner tag for the deployed resource associated with the stack.
+    Type: String
+
+  S3ICPFixpackExecutablePath:
+    Description: >-
+      The S3 path to the latest ICP fixpack executable (.sh) file.
+    Type: String
+    Default: ''
+
+  S3ICPInceptionFixpackPath:
+    Description: >-
+      The S3 path to the latest ICP inception fixpack archive (.tar) file.
+    Type: String
+    Default: ''
+
+  ServiceCIDR:
+    Description: >-
+      The CIDR for the ICP service overlay network.  This gets assigned to the service_cluster_ip_range attribute in config.yaml.  The value provided must be a network that does not conflict with the AWS VPC network.  It also must not conflict with the ICP cluster overlay network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 172.16.16.0/24
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  UsePrivateRegistry:
+    Description: >-
+      Configure a private Docker registry on the Boot node. Load the private registry with the IBM Cloud Private images. Install ICP using the private registry. (Not Available Yet)
+    Type: String
+    AllowedValues:
+      - True
+      - False
+    Default: False
+
+  VPCName:
+    Description: The name of the deployed Virtual Private Cloud
+    Type: String
+    Default: IBMCloudPrivateVPC
+
+  VulnerabilityAdvisorNodeCount:
+    Description: >-
+      Number of Vulnerability Advisor nodes to be deployed in the ICP cluster. Not typically deployed for a development environment. For production deployments, at least 2 and typically 3 are deployed.  The VA nodes run the resource image and container security scanning components.
+    Type: String
+    Default: 1
+
+  VulnerabilityAdvisorNodeInstanceType:
+    Description: ICP vulnerability advisor node AWS EC2 instance type
+    Type: String
+    Default: m5d.2xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  WorkerNodeInstanceType:
+    Description: ICP worker node AWS EC2 instance type
+    Type: String
+    Default: m5d.xlarge
+    AllowedValues:
+      - t2.micro
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5.4xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+      - m5d.4xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
+
+  WorkerNodeCount:
+    Description: >-
+      Number of worker nodes (desired capacity) to be deployed in the ICP cluster.
+    Type: String
+    Default: 2
+
+  X509CommonName:
+    Description: >-
+      Name to use for CN attribute of the X.509 certificate that gets generated as part of the ICP configuration.  TBD: May be eliminated.  ClusterCADomain is the same thing.
+    Type: String
+    Default: ''
+
+Mappings:
+  # See https://cloud-images.ubuntu.com/locator/ec2/
+  # Builds needed that support HVM, Elastic Network Adapter (ENA)
+  # in order to use the MD5 instance types.
+  # TODO - Update EU an AP
+  AWSRegionAMIEC2:
+    us-east-1:
+      Ubuntu16: ami-ef151d90
+    us-east-2:
+      Ubuntu16: ami-dad5efbf
+    us-west-1:
+      Ubuntu16: ami-d8b05cbb
+    us-west-2:
+      Ubuntu16: ami-1cc69e64
+    eu-west-1:
+      Ubuntu16: ami-844e0bf7
+    eu-central-1:
+      Ubuntu16: ami-a9a557c6
+    ap-northeast-1:
+      Ubuntu16: ami-d82efcb9
+    ap-southeast-1:
+      Ubuntu16: ami-d554f1b6
+    ap-southeast-2:
+      Ubuntu16: ami-0bc1f168
+
+Resources:
+
+  IBMCloudPrivateVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      # Enabling DNS as a convenience.  TBD: Down side to enabling DNS?
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Ref VPCName
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: !Sub
+            - "kubernetes.io/cluster/${UniqueID}"
+            - { UniqueID: !Ref IBMCloudPrivateVPC }
+          Value: !Ref IBMCloudPrivateVPC
+
+  ICPClusterSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      CidrBlock: !Ref ClusterSubNetCidr
+      VpcId: !Ref IBMCloudPrivateVPC
+      Tags:
+        - Key: Name
+          Value: ICPClusterSubnet
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  ICPInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: ICPInternetGateway
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  ICPGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      InternetGatewayId: !Ref ICPInternetGateway
+
+  ICPRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  ICPPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn:
+      - ICPSubnetRouteTableAssociation
+    Properties:
+      DestinationCidrBlock: 0.0.0.0/0
+      RouteTableId: !Ref ICPRouteTable
+      GatewayId: !Ref ICPInternetGateway
+
+  ICPSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref ICPRouteTable
+      SubnetId: !Ref ICPClusterSubnet
+
+  MasterNodeLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: network
+      Subnets:
+        - !Ref ICPClusterSubnet
+      Tags:
+        - Key: Name
+          Value: MasterNodeLoadBalancer
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  MasterNode8443TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8443
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNode8001TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8001
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNode9443TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 9443
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNode8500TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8500
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNodeLoadBalancer8443Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode8443TargetGroup
+      Port: 8443
+      Protocol: TCP
+
+  MasterNodeLoadBalancer8001Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode8001TargetGroup
+      Port: 8001
+      Protocol: TCP
+
+  MasterNodeLoadBalancer9443Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode9443TargetGroup
+      Port: 9443
+      Protocol: TCP
+
+  MasterNodeLoadBalancer8500Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode8500TargetGroup
+      Port: 8500
+      Protocol: TCP
+
+  ProxyNodeLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: network
+      Subnets:
+        - !Ref ICPClusterSubnet
+      Tags:
+        - Key: Name
+          Value: ProxyNodeLoadBalancer
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  ProxyNode80TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 80
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  ProxyNode443TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 443
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  ProxyNodeLoadBalancer80Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ProxyNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ProxyNode80TargetGroup
+      Port: 80
+      Protocol: TCP
+
+  ProxyNodeLoadBalancer443Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ProxyNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ProxyNode443TargetGroup
+      Port: 443
+      Protocol: TCP
+
+  ExternalSSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: >-
+        Security group enabling external SSH access
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref ExternalSSHLocation
+      Tags:
+        - Key: Name
+          Value: ExternalSSHSecurityGroup
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  InternalSSHSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      VpcId: !Ref IBMCloudPrivateVPC
+      GroupDescription: >-
+        Security group enabling internal SSH access from the boot node to the cluster member nodes
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref ClusterSubNetCidr
+      Tags:
+        - Key: Name
+          Value: InternalSSHSecurityGroup
+        - Key: Owner
+          Value: !Ref ResourceOwner
+
+  ICPRootRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Policies:
+        - PolicyName: ICPBucketAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            # ListBucket is useful to avoid 403 errors that are really 404 errors
+            Statement:
+              - Action:
+                  - 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${ICPArchiveBucketName}'
+                Effect: Allow
+              - Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${ICPArchiveBucketName}/*'
+                Effect: Allow
+              - Action:
+                  - 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${ICPScriptBucketName}'
+                Effect: Allow
+              - Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${ICPScriptBucketName}/*'
+                Effect: Allow
+              - Action:
+                  - 's3:ListBucket'
+                Resource: !Sub 'arn:aws:s3:::${ICPDeploymentLogsBucketName}'
+                Effect: Allow
+              - Action:
+                  - 's3:GetObject'
+                Resource: !Sub 'arn:aws:s3:::${ICPDeploymentLogsBucketName}/*'
+                Effect: Allow
+
+          # From here on, the policies are needed for the bootstrap scripts
+          # to access various classes of resources to prepare for and configure
+          # the ICP installation.
+        - PolicyName: ICPCloudFormationAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - cloudformation:ListStackResources
+                Resource: !Sub '${AWS::StackId}'
+                Effect: Allow
+              - Action:
+                  - cloudformation:DescribeStacks
+                Resource: !Sub '${AWS::StackId}'
+                Effect: Allow
+
+          # Needed for the bootstrap script introspection of the stack
+        - PolicyName: ICPAutoScalingAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                - autoscaling:DescribeAutoScalingGroups
+                Resource: '*'
+                Effect: Allow
+
+          # Needed for the bootstrap script introspection of the stack
+        - PolicyName: ICPEC2AccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - 'ec2:Describe*'
+                Effect: Allow
+                Resource: '*'
+
+        - PolicyName: ICPElastLoadBalancingAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - elasticloadbalancing:DescribeTags
+                  - elasticloadbalancing:DescribeLoadBalancers
+                Effect: Allow
+                Resource: '*'
+
+          # Needed for the bootstrap script and nodeinit script interaction
+        - PolicyName: ICPSSMAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - ssm:PutParameter
+                  - ssm:GetParameter
+                  - ssm:DeleteParameters
+                Effect: Allow
+                Resource: '*'
+
+  ICPHostProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Path: /
+      Roles:
+        - !Ref ICPRootRole
+
+  ICPBootNode:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref ICPRootRole
+          buckets:
+            - !Ref ICPArchiveBucketName
+            - !Ref ICPScriptBucketName
+
+      AWS::CloudFormation::Init:
+        configSets:
+          # TBD: Are configsets executed by cfn-init synchronously
+          # or asynchronously?
+          # Early testing is showing that the ICP installation 10 GB
+          # tar ball gets downloaded from S3 in 3 minutes.  That would
+          # be awesome if actually the case.
+          ICPBootstrap:
+            - InstallPackages
+            - StackPropertiesFile
+            - ICPBootstrapScripts
+            - ICPInstallBinaries
+            - ICPFixpackBinaries
+
+        InstallPackages:
+          packages:
+            apt:
+              sysstat: []
+              awscli: []
+              ansible: []
+            python:
+              pycryptodome: []
+              boto3: []
+
+        ICPInstallBinaries:
+          files:
+            /root/docker/icp-install-docker.bin:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${InstallExecutable}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
+              mode: '000554'
+              owner: root
+              group: root
+            /tmp/icp-install-archive.tgz:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${ArchivePath}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref ICPArchivePath }
+              mode: '000664'
+              owner: root
+              group: root
+
+        ICPFixpackBinaries:
+          files:
+            /tmp/icp-fixpack.sh:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${FixpackExecutable}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, FixpackExecutable: !Ref S3ICPFixpackExecutablePath }
+              mode: '000554'
+              owner: root
+              group: root
+            /tmp/icp-inception-fixpack.tar:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${ArchivePath}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref S3ICPInceptionFixpackPath }
+              mode: '000664'
+              owner: root
+              group: root
+
+        ICPBootstrapScripts:
+          sources:
+            /root: !Sub
+             - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPBootNodeScriptPackagePath }
+
+        StackPropertiesFile:
+          files:
+            /root/mystack.props:
+              content: !Sub |
+                STACK_NAME=${AWS::StackName}
+                STACK_ID="${AWS::StackId}"
+
+            /root/.aws/config:
+              content: !Sub |
+                [default]
+                region=${AWS::Region}
+
+    Properties:
+      InstanceType: !Ref BootNodeInstanceType
+      IamInstanceProfile: !Ref ICPHostProfile
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap
+          - AWSRegionAMIEC2
+          - !Ref AWS::Region
+          - Ubuntu16
+
+      NetworkInterfaces:
+        - GroupSet:
+            - !Ref ExternalSSHSecurityGroup
+          AssociatePublicIpAddress: true
+          DeviceIndex: "0"
+          DeleteOnTermination: true
+          SubnetId: !Ref ICPClusterSubnet
+
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 300
+            Iops: 8000
+
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            apt update -y
+            # Intall pip, then use pip to install the aws cfn helpers
+            apt install -y python-pip
+            # Upgrading pip leads to an error. Don't do, pip install --upgrade pip
+            pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+            # Install the files and packages from the metadata
+            /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ICPBootNode --configsets ICPBootstrap --region ${AWS::Region}
+            pip install pyopenssl
+            pip install docker
+            chmod +x /root/*.sh
+            chmod +x /root/*.py
+            cd /root
+            /root/bootstrap.sh --os ubuntu
+
+      Tags:
+        - Key: Name
+          Value: ICPBootNode
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: ICPRole
+          Value: Boot
+
+  MasterNodeLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    DependsOn:
+      - ICPGatewayAttachment
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref ICPRootRole
+          buckets:
+            - !Ref ICPArchiveBucketName
+            - !Ref ICPScriptBucketName
+
+      AWS::CloudFormation::Init:
+        configSets:
+          ICPBootstrap:
+            - InstallPackages
+            - StackPropertiesFile
+            - ICPNodeInitScripts
+            - ICPInstallBinaries
+
+        InstallPackages:
+          packages:
+            apt:
+              sysstat: []
+              awscli: []
+            python:
+              pycryptodome: []
+              boto3: []
+
+        ICPInstallBinaries:
+          # The Docker install executable gets copied down to all nodes
+          files:
+            /root/docker/icp-install-docker.bin:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${InstallExecutable}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
+              mode: '000554'
+              owner: root
+              group: root
+            # It is expedient to copy the ICP install archive to all nodes.
+            /tmp/icp-install-archive.tgz:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${ArchivePath}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref ICPArchivePath }
+              # Mode bits are getting mucked with, need to investigate
+              # The result is octal 436 when this gets deployed
+              mode: '000664'
+              owner: root
+              group: root
+
+        ICPNodeInitScripts:
+          sources:
+            /root: !Sub
+             - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+
+        StackPropertiesFile:
+          files:
+            /root/mystack.props:
+              content: !Sub |
+                STACK_NAME=${AWS::StackName}
+                STACK_ID="${AWS::StackId}"
+
+            /root/.aws/config:
+              content: !Sub |
+                [default]
+                region=${AWS::Region}
+
+    Properties:
+      InstanceType: !Ref MasterNodeInstanceType
+      IamInstanceProfile: !Ref ICPHostProfile
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap
+          - AWSRegionAMIEC2
+          - !Ref AWS::Region
+          - Ubuntu16
+
+      AssociatePublicIpAddress: true
+
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            apt update -y
+            # Intall pip, then use pip to install the aws cfn helpers
+            apt install -y python-pip
+            # Upgrading pip leads to an error. Don't do, pip install --upgrade pip
+            pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+            # Install the files and packages from the metadata
+            /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource MasterNodeLaunchConfiguration --configsets ICPBootstrap --region ${AWS::Region}
+            # pip install pyopenssl (so far, not needed on cluster nodes)
+            chmod +x /root/*.sh
+            chmod +x /root/*.py
+            cd /root
+            /root/nodeinit.sh --os ubuntu
+
+      SecurityGroups:
+        - !Ref ExternalSSHSecurityGroup
+        - !Ref InternalSSHSecurityGroup
+
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 300
+            Iops: 8000
+
+  MasterNodeAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchConfigurationName: !Ref MasterNodeLaunchConfiguration
+      VPCZoneIdentifier:
+        - !Ref ICPClusterSubnet
+      TargetGroupARNs:
+        - !Ref MasterNode8443TargetGroup
+        - !Ref MasterNode9443TargetGroup
+        - !Ref MasterNode8001TargetGroup
+        - !Ref MasterNode8500TargetGroup
+      DesiredCapacity: !Ref MasterNodeCount
+      MinSize: 1
+      MaxSize: 5
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+          PropagateAtLaunch: true
+        - Key: ICPRole
+          Value: Master
+          PropagateAtLaunch: true
+
+  WorkerLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    DependsOn:
+      - ICPGatewayAttachment
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref ICPRootRole
+          buckets:
+            - !Ref ICPArchiveBucketName
+            - !Ref ICPScriptBucketName
+
+      AWS::CloudFormation::Init:
+        configSets:
+          ICPBootstrap:
+            - InstallPackages
+            - StackPropertiesFile
+            - ICPNodeInitScripts
+            - ICPInstallBinaries
+
+        InstallPackages:
+          packages:
+            apt:
+              sysstat: []
+              awscli: []
+            python:
+              pycryptodome: []
+              boto3: []
+
+        ICPInstallBinaries:
+          # The Docker install executable gets copied down to all nodes
+          files:
+            /root/docker/icp-install-docker.bin:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${InstallExecutable}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
+              mode: '000554'
+              owner: root
+              group: root
+            # It is expedient to copy the ICP install archive to all nodes.
+            /tmp/icp-install-archive.tgz:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${ArchivePath}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref ICPArchivePath }
+              mode: '000664'
+              owner: root
+              group: root
+
+        ICPNodeInitScripts:
+          sources:
+            /root: !Sub
+             - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+
+        StackPropertiesFile:
+          files:
+            /root/mystack.props:
+              content: !Sub |
+                STACK_NAME=${AWS::StackName}
+                STACK_ID="${AWS::StackId}"
+
+            /root/.aws/config:
+              content: !Sub |
+                [default]
+                region=${AWS::Region}
+
+    Properties:
+      InstanceType: !Ref WorkerNodeInstanceType
+      IamInstanceProfile: !Ref ICPHostProfile
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap
+          - AWSRegionAMIEC2
+          - !Ref AWS::Region
+          - Ubuntu16
+
+      AssociatePublicIpAddress: true
+
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            apt update -y
+            # Intall pip, then use pip to install the aws cfn helpers
+            apt install -y python-pip
+            # Upgrading pip leads to an error. Don't do, pip install --upgrade pip
+            pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+            # Install the files and packages from the metadata
+            /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource WorkerLaunchConfiguration --configsets ICPBootstrap --region ${AWS::Region}
+            # pip install pyopenssl (so far, not needed on cluster nodes)
+            chmod +x /root/*.sh
+            chmod +x /root/*.py
+            cd /root
+            /root/nodeinit.sh --os ubuntu
+
+      SecurityGroups:
+        - !Ref ExternalSSHSecurityGroup
+        - !Ref InternalSSHSecurityGroup
+
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 300
+            Iops: 8000
+
+  WorkerAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchConfigurationName: !Ref WorkerLaunchConfiguration
+      VPCZoneIdentifier:
+        - !Ref ICPClusterSubnet
+      DesiredCapacity: !Ref WorkerNodeCount
+      MinSize: 1
+      MaxSize: 10
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+          PropagateAtLaunch: true
+        - Key: ICPRole
+          Value: Worker
+          PropagateAtLaunch: true
+
+  ManagementNodeLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    DependsOn:
+      - ICPGatewayAttachment
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref ICPRootRole
+          buckets:
+            - !Ref ICPArchiveBucketName
+            - !Ref ICPScriptBucketName
+
+      AWS::CloudFormation::Init:
+        configSets:
+          ICPBootstrap:
+            - InstallPackages
+            - StackPropertiesFile
+            - ICPNodeInitScripts
+            - ICPInstallBinaries
+
+        InstallPackages:
+          packages:
+            apt:
+              sysstat: []
+              awscli: []
+            python:
+              pycryptodome: []
+              boto3: []
+
+        ICPInstallBinaries:
+          # The Docker install executable gets copied down to all nodes
+          files:
+            /root/docker/icp-install-docker.bin:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${InstallExecutable}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
+              mode: '000554'
+              owner: root
+              group: root
+            # It is expedient to copy the ICP install images to all nodes
+            /tmp/icp-install-archive.tgz:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${ArchivePath}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref ICPArchivePath }
+              mode: '000664'
+              owner: root
+              group: root
+
+        ICPNodeInitScripts:
+          sources:
+            /root: !Sub
+             - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+
+        StackPropertiesFile:
+          files:
+            /root/mystack.props:
+              content: !Sub |
+                STACK_NAME=${AWS::StackName}
+                STACK_ID="${AWS::StackId}"
+
+            /root/.aws/config:
+              content: !Sub |
+                [default]
+                region=${AWS::Region}
+
+    Properties:
+      InstanceType: !Ref ManagementNodeInstanceType
+      IamInstanceProfile: !Ref ICPHostProfile
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap
+          - AWSRegionAMIEC2
+          - !Ref AWS::Region
+          - Ubuntu16
+
+      AssociatePublicIpAddress: true
+
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            apt update -y
+            # Intall pip, then use pip to install the aws cfn helpers
+            apt install -y python-pip
+            # Upgrading pip leads to an error. Don't do, pip install --upgrade pip
+            pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+            # Install the files and packages from the metadata
+            /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ManagementNodeLaunchConfiguration --configsets ICPBootstrap --region ${AWS::Region}
+            # pip install pyopenssl (so far, not needed on cluster nodes)
+            chmod +x /root/*.sh
+            chmod +x /root/*.py
+            cd /root
+            /root/nodeinit.sh --os ubuntu
+
+      SecurityGroups:
+        - !Ref ExternalSSHSecurityGroup
+        - !Ref InternalSSHSecurityGroup
+
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 500
+            Iops: 8000
+
+  ManagementNodeAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchConfigurationName: !Ref ManagementNodeLaunchConfiguration
+      VPCZoneIdentifier:
+        - !Ref ICPClusterSubnet
+      DesiredCapacity: !Ref ManagementNodeCount
+      MinSize: 1
+      MaxSize: 3
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+          PropagateAtLaunch: true
+        - Key: ICPRole
+          Value: Management
+          PropagateAtLaunch: true
+
+  ProxyNodeLaunchConfiguration:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    DependsOn:
+      - ICPGatewayAttachment
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref ICPRootRole
+          buckets:
+            - !Ref ICPArchiveBucketName
+            - !Ref ICPScriptBucketName
+
+      AWS::CloudFormation::Init:
+        configSets:
+          ICPBootstrap:
+            - InstallPackages
+            - StackPropertiesFile
+            - ICPNodeInitScripts
+            - ICPInstallBinaries
+
+        InstallPackages:
+          packages:
+            apt:
+              sysstat: []
+              awscli: []
+            python:
+              pycryptodome: []
+              boto3: []
+
+        ICPInstallBinaries:
+          files:
+            /root/docker/icp-install-docker.bin:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${InstallExecutable}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
+              mode: '000554'
+              owner: root
+              group: root
+            /tmp/icp-install-archive.tgz:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${ArchivePath}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref ICPArchivePath }
+              mode: '000664'
+              owner: root
+              group: root
+
+        ICPNodeInitScripts:
+          sources:
+            /root: !Sub
+             - https://${ScriptBucketName}.s3-${AWS::Region}.amazonaws.com/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+
+        StackPropertiesFile:
+          files:
+            /root/mystack.props:
+              content: !Sub |
+                STACK_NAME=${AWS::StackName}
+                STACK_ID="${AWS::StackId}"
+
+            /root/.aws/config:
+              content: !Sub |
+                [default]
+                region=${AWS::Region}
+
+    Properties:
+      InstanceType: !Ref ProxyNodeInstanceType
+      IamInstanceProfile: !Ref ICPHostProfile
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap
+          - AWSRegionAMIEC2
+          - !Ref AWS::Region
+          - Ubuntu16
+
+      AssociatePublicIpAddress: true
+
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            apt update -y
+            # Intall pip, then use pip to install the aws cfn helpers
+            apt install -y python-pip
+            # Upgrading pip leads to an error. Don't do, pip install --upgrade pip
+            pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+            # Install the files and packages from the metadata
+            /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ProxyNodeLaunchConfiguration --configsets ICPBootstrap --region ${AWS::Region}
+            # pip install pyopenssl (so far, not needed on cluster nodes)
+            chmod +x /root/*.sh
+            chmod +x /root/*.py
+            cd /root
+            /root/nodeinit.sh --os ubuntu
+
+      SecurityGroups:
+        - !Ref ExternalSSHSecurityGroup
+        - !Ref InternalSSHSecurityGroup
+
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 300
+            Iops: 8000
+
+  ProxyNodeAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      LaunchConfigurationName: !Ref ProxyNodeLaunchConfiguration
+      VPCZoneIdentifier:
+        - !Ref ICPClusterSubnet
+      TargetGroupARNs:
+        - !Ref ProxyNode80TargetGroup
+        - !Ref ProxyNode443TargetGroup
+      DesiredCapacity: !Ref ProxyNodeCount
+      MinSize: 1
+      MaxSize: 3
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+          PropagateAtLaunch: true
+        - Key: ICPRole
+          Value: Proxy
+          PropagateAtLaunch: true
+
+Outputs:
+  MasterNodeLoadBalancerName:
+    Description: The DNS name of the ICP Master node Elastic Load Balancer.
+    Value: !GetAtt MasterNodeLoadBalancer.DNSName
+
+  ProxyNodeLoadBalancerName:
+    Description: The DNS name of the ICP Proxy node Elastic Load Balancer.
+    Value: !GetAtt ProxyNodeLoadBalancer.DNSName

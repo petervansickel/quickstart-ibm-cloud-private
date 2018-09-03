@@ -42,7 +42,7 @@ import yapl.utilities.Utilities as Utilities
 from yapl.exceptions.Exceptions import ExitException
 from yapl.exceptions.Exceptions import MissingArgumentException
 from yapl.exceptions.ICPExceptions import ICPInstallationException
-
+from yapl.exceptions.AWSExceptions import AWSStackResourceException
 
 GetParameterSleepTime = 60 # seconds
 GetParameterMaxTryCount = 100
@@ -57,6 +57,22 @@ TR = Trace(__name__)
 StackParameters = {}
 StackParameterNames = []
 
+class EFSVolume:
+  """
+    Simple class to manage and EFS volume.
+  """
+  
+  def __init__(self,fileSystem,region,mountPoint):
+    """
+      Constructor
+    """
+    self.fileSystem = fileSystem,
+    self.region = region
+    self.mountPoint = mountPoint
+  #endDef
+  
+#endClass
+
 
 class NodeInit(object):
   """
@@ -66,6 +82,7 @@ class NodeInit(object):
 
   ArgsSignature = {
                     '--help':       'string',
+                    '--region':     'string',
                     '--stack-name': 'string',
                     '--stackid':    'string',
                     '--role':       'string',
@@ -91,6 +108,7 @@ class NodeInit(object):
     self.rc = 0
     self.ssm = boto3.client('ssm')
     self.s3  = boto3.client('s3')
+    self.cfnClient = boto3.client('cloudformation')
     self.cfnResource = boto3.resource('cloudformation')    
   #endDef
 
@@ -279,8 +297,60 @@ class NodeInit(object):
       authorized_keys.write("%s\n" % authorizedKeyEntry)
     #endWith
   #endDef
+  
     
+  def getStackOutput(self, stackId, outputKey):
+    """
+      For the given stack ID return the value of the given output key.
+    """
+    methodName = "getStackOutput"
+    
+    if (not stackId):
+      raise MissingArgumentException("A stack resource ID must be provided.")
+    #endIf
+    
+    if (not outputKey):
+      raise MissingArgumentException("An output key must be provided.")
+    #endIf
+    
+    response = self.cfnClient.describe_stacks(StackName=stackId)
+    if (not response):
+      raise AWSStackResourceException("Empty result for CloudFormation describe_stacks for stack: %s" % stackId)
+    #endIf
+    
+    stacks = response.get('Stacks')
+    if (len(stacks) != 1):
+      raise AWSStackResourceException("Unexpected number of stacks: %d, from describe_stacks for stack: %s" %(len(stacks),stackId))
+    #endIf
+    
+    myStack = stacks[0]
+    outputs = myStack.get('Outputs')
+    if (not outputs):
+      raise AWSStackResourceException("Expecting output with key: %s, defined for stack: %s, but no outputs defined." % (outputKey,stackId))
+    #endIf
 
+    result = None    
+    for output in outputs:
+      key = output.get('OutputKey')
+      if (key == outputKey):
+        result = output.get('OutputValue')
+        if (TR.isLoggable(Level.FINEST)):
+          TR.finest(methodName,"Got output for key: %s with value: %s" %(outputKey,result))
+        #endIf
+        break
+      #endIf
+    #endFor
+    
+    # Output value types are strings or other simple types.
+    # The actual value of an output will never be None. 
+    if (result == None):
+      TR.warning(methodName, "For stack: %s, no output found for key: %s" % (stackId,outputKey))
+    #endIf
+    
+    return result
+  #endDef
+  
+  
   def getSSMParameterValue(self,parameterKey,expectedValue=None):
     """
       Return the value from the given SSM parameter key.
@@ -289,7 +359,7 @@ class NodeInit(object):
       will continue until the expected value is seen or the try count is exceeded.
       
       NOTE: It is possible that the parameter is not  present in the SSM parameter
-      cache when this method is invoked.   When hat happens a ParameterNotFound 
+      cache when this method is invoked.   When that happens a ParameterNotFound 
       exception is raised by ssm.get_parameter().  Depending on the trace level,
       that  exception is reported in the log, but ignored.
     """
@@ -299,7 +369,7 @@ class NodeInit(object):
 
     tryCount = 1
     gotit = False
-    while not gotit and tryCount <= GetParameterMaxTryCount:
+    while (not gotit and tryCount <= GetParameterMaxTryCount):
       if (expectedValue == None):
         TR.info(methodName,"Try: %d for getting parameter: %s" % (tryCount,parameterKey))
       else:
@@ -542,6 +612,45 @@ class NodeInit(object):
   #endDef
   
   
+  def mountEFSVolumes(self, volumes):
+    """
+      Mount the EFS storage volumes for the audit log and the Docker registry.
+      
+      volumes is either a singleton instance of EFSVolume or a list of instances
+      of EFSVolume.  EFSVolume has everything needed to mount the volume on a
+      given mount point.
+    """
+    methodName = "mountNFSVolumes"
+    
+    if (not volumes):
+      raise MissingArgumentException("One or more EFS volumes must be provided.")
+    #endIf
+    
+    if (type(volumes) != type([])):
+      volumes = [volumes]
+    #endIf
+    
+    for volume in volumes:
+      if (not os.path.exists(volume.mountPoint)):
+        os.makedirs(volume.mountPoint,'rw')
+        TR.info(methodName,"Created directory for EFS mount point: %s" % volume.mountPoint)
+      elif (not os.path.isdir(volume.mountPoint)):
+        raise Exception("EFS mount point path: %s exists but is not a directory." % volume.mountPoint)
+      else:
+        TR.info(methodName,"EFS mount point: %s already exists." % volume.mountPoint)
+      #endIf
+      
+      retcode = call("mount -t nfs4 -o nfsvers=4.1 %s.efs.%s.amonzonaws.com:/ %s" % (volume.fileSystem,volume.region,volume.mountPoint), shell=True)
+      if (retcode != 0):
+        raise Exception("Error return code: %s mounting EFS volume: %s in region: %s on mount point: %s" % (retcode,volume.fileSystem,volume.region,volume.mountPoint))
+      #endIf
+
+    #endFor
+    
+    
+  #endDef
+  
+  
   def exportLogs(self, bucketName, stackName, logsDirectoryPath):
     """
       Export the deployment logs to the given S3 bucket for the given stack.
@@ -605,6 +714,13 @@ class NodeInit(object):
         TR.info(methodName,"NINIT0102I Tracing with specification: '%s' to log file: '%s'" % (trace,logFile))
       #endIf
       
+      region = cmdLineArgs.get('region')
+      if (not region):
+        raise MissingArgumentException("The AWS region (--region) must be provided.")
+      #endIf
+      self.region = region
+
+      # The stackId is the "nested" stackId  It is used to get input parameter values.
       stackId = cmdLineArgs.get('stackid')
       if (not stackId):
         raise MissingArgumentException("The stack ID (--stackid) must be provided.")
@@ -613,6 +729,9 @@ class NodeInit(object):
       self.stackId = stackId
       TR.info(methodName,"Stack ID: %s" % stackId)
 
+      # NOTE: The stackName is the root stack name as that is the name used in 
+      # the SSM parameter keys by the boot node stack and the nested stacks.
+      # For communication purposes all stacks must use the same root stack name.
       stackName = cmdLineArgs.get('stack-name')
       if (not stackName):
         raise MissingArgumentException("The stack name (--stack-name) must be provided.")
@@ -642,7 +761,15 @@ class NodeInit(object):
       
       authorizedKeyEntry = self.getBootNodePublicKey()
       self.addAuthorizedKey(authorizedKeyEntry)
-      
+
+      # NOTE: All CFN outputs, parameters are strings even when the Type is Number.
+      # Hence, the conversion of MasterNodeCount to an int.
+      if (self.role == 'master' and int(self.MasterNodeCount) > 1):
+        efsId = self.ClusterSharedStorage # An input to the master stack
+        efsVolumes = [EFSVolume(efsId,region,mountPoint) for mountPoint in ['/var/lib/registry','/var/lib/icp/audit','/var/log/audit']]
+        self.mountEFSVolumes(efsVolumes)
+      #endIf
+            
       self.publishReadiness(self.stackName,self.fqdn)
 
       # Wait until boot node completes the Docker installation
@@ -654,8 +781,8 @@ class NodeInit(object):
         self.installKubectl()
       #endIf
       
-      self.putSSMParameterValue("/%s/%s" % (self.stackName,self.fqdn),'READY',description="%s is READY" % self.fqdn)
-            
+      self.publishReadiness(self.stackName,self.fqdn)
+          
 
     except ExitException:
       pass # ExitException is used as a "goto" end of program after emitting help info

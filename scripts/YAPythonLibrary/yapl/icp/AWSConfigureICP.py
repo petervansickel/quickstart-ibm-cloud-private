@@ -22,6 +22,7 @@ from yapl.utilities.Trace import Trace, Level
 from yapl.exceptions.Exceptions import MissingArgumentException
 from yapl.exceptions.Exceptions import InvalidParameterException
 from yapl.exceptions.AWSExceptions import AWSStackResourceException
+from yapl.exceptions.ICPExceptions import ICPInstallationException
 
 TR = Trace(__name__)
 
@@ -29,16 +30,17 @@ TR = Trace(__name__)
 #       The key names are the parameter names used in the CloudFormation template that 
 #       deploys the ICP cluster resources.
 TemplateKeywordMappings = {
-                           'CalicoTunnelMTU':    'CALICO_TUNNEL_MTU',
-                           'CloudProvider':      'CLOUD_PROVIDER',
-                           'ClusterCADomain':    'CLUSTER_CA_DOMAIN',
-                           'ClusterCIDR':        'CLUSTER_CIDR',
-                           'ClusterDomain':      'CLUSTER_DOMAIN',
-                           'ClusterLBAddress':   'CLUSTER_LB_ADDRESS',
-                           'ClusterName':        'CLUSTER_NAME',
-                           'KubletNodeName':     'KUBLET_NODENAME',
-                           'ProxyLBAddress':     'PROXY_LB_ADDRESS',
-                           'ServiceCIDR':        'SERVICE_CIDR'
+                           'CalicoTunnelMTU':      'CALICO_TUNNEL_MTU',
+                           'CloudProvider':        'CLOUD_PROVIDER',
+                           'ClusterCADomain':      'CLUSTER_CA_DOMAIN',
+                           'ClusterCIDR':          'CLUSTER_CIDR',
+                           'ClusterDomain':        'CLUSTER_DOMAIN',
+                           'ClusterLBAddress':     'CLUSTER_LB_ADDRESS',
+                           'ClusterName':          'CLUSTER_NAME',
+                           'ExcludedMgmtServices': 'EXCLUDED_MGMT_SERVICES',
+                           'KubletNodeName':       'KUBLET_NODENAME',
+                           'ProxyLBAddress':       'PROXY_LB_ADDRESS',
+                           'ServiceCIDR':          'SERVICE_CIDR'
                           }
 
 ConfigurationParameterNames = TemplateKeywordMappings.keys()
@@ -46,6 +48,7 @@ ConfigurationParameterNames = TemplateKeywordMappings.keys()
 AWSDefaultParameterValues = {
                               'CalicoTunnelMTU': 8981,
                               'CloudProvider': 'aws',
+                              'ExcludedMgmtServices': ["istio", "vulnerability-advisor", "custom-metrics-adapter"],
                               'KubletNodeName': 'fqdn'
                             }
 
@@ -62,9 +65,12 @@ class ConfigureICP:
     gets used to drive the installation of IBM Cloud Private (ICP).
   """
 
-  def __init__(self, stackId=None, templatePath=None, **restArgs):
+  def __init__(self, stackIds=None, templatePath=None, **restArgs):
     """
       Constructor
+      
+      The stackIds input parameter is expected to be a list of AWS stack resource IDs.
+      The first stack ID in the list is assumed to be the root stack.
     """
     methodName = "__init__"
     
@@ -74,11 +80,11 @@ class ConfigureICP:
     
     self.parameters = {}
     
-    if (not stackId):
-      raise MissingArgumentException("The CloudFormation Stack ID must be provided.")
+    if (not stackIds):
+      raise MissingArgumentException("The CloudFormation stack resource IDs must be provided.")
     #endIf
     
-    self.stackId = stackId
+    self.rootStackId = stackIds[0]
     
     if (not templatePath):
       raise MissingArgumentException("The path to the config.yaml template file must be provided.")
@@ -86,7 +92,7 @@ class ConfigureICP:
     
     self.templatePath = templatePath
     
-    stackParms = self.getStackParameters(stackId)
+    stackParms = self.getStackParameters(self.rootStackId)
     if (TR.isLoggable(Level.FINEST)):
       TR.finest(methodName,"Parameters defined in the stack:\n\t%s" % stackParms)
     #endIf
@@ -96,11 +102,17 @@ class ConfigureICP:
       TR.finest(methodName,"All parameters, including defaults:\n\t%s" % self.parameters)
     #endIf
 
-    masterELBDomain = self.getLoadBalancerDNSName(stackId,elbName="MasterNodeLoadBalancer")
-    self.parameters['ClusterLBAddress'] = masterELBDomain
+    masterELB = self.getLoadBalancerDNSName(stackIds,elbName="MasterNodeLoadBalancer")
+    if (not masterELB):
+      raise ICPInstallationException("An ELB with a Name tag of MasterNodeLoadBalancer was not found.")
+    #endIf
+    self.parameters['ClusterLBAddress'] = masterELB
     
-    proxyLBAddress = self.getLoadBalancerDNSName(stackId,elbName="ProxyNodeLoadBalancer")
-    self.parameters['ProxyLBAddress'] = proxyLBAddress
+    proxyELB = self.getLoadBalancerDNSName(stackIds,elbName="ProxyNodeLoadBalancer")
+    if (not proxyELB):
+      raise ICPInstallationException("An ELB with a Name tag of ProxyNodeLoadBalancer was not found.")
+    #endIf
+    self.parameters['ProxyLBAddress'] = proxyELB
     
     self.parameters['ClusterCADomain'] = self.getCommonName()
     
@@ -168,6 +180,8 @@ class ConfigureICP:
   def listELBResoures(self,stackId):
     """
       Return a list of ELB resource instance IDs from the given stack.
+      
+      An empty list is returned if there are no ELB instances in the given stack.
     """
     
     if (not stackId):
@@ -200,6 +214,8 @@ class ConfigureICP:
   def getELBResourceIdForName(self,stackId,elbName=None):
     """
       Return the Elastic Load Balancer ARN with the given name as the value of its Name tag.
+      
+      If no ELB is found with the given name in its Name tag then the empty string is returned.
     """
     if (not stackId):
       raise MissingArgumentException("A stack ID (stackId) is required.")
@@ -209,50 +225,53 @@ class ConfigureICP:
       raise MissingArgumentException("An Elastic Load Balancer Name (elbName) must be provided.")
     #endIf
     
+    elbResourceId = ""
+    
     elbIIds = self.listELBResoures(stackId)
     
-    if (not elbIIds):
-      raise AWSStackResourceException("No Elastic Load Balancer defined for the Master node(s) in stack: %s" % stackId)
-    #endIf
-
-    elbResourceId = None
-    for elbIId in elbIIds:
-      response = self.elbv2Client.describe_tags(ResourceArns=[elbIId])
-      if (not response):
-        raise AWSStackResourceException("Empty response for ELBv2 Client describe_tags() for Elastic Load Balancer with ARN: %s" % elbIId)
-      #endIf
-    
-      tagDescriptions = response.get('TagDescriptions')
-      if (len(tagDescriptions) != 1):
-        raise AWSStackResourceException("Unexpected number of TagDescriptions in describe_tags() response from ELB with ARN: %s" % elbIId)
-      #endIf
-      
-      tagDescription = tagDescriptions[0]
-      tags = tagDescription.get('Tags')
-      if (not tags):
-        raise AWSStackResourceException("All Elastic Load Balancers must have at least a Name tag.  No tags found for ELB with ARN: %s" % elbIId)
-      #endIf
-      
-      for tag in tags:
-        if (tag.get('Key') == 'Name'):
-          if (tag.get('Value') == elbName):
-            elbResourceId = tagDescription.get('ResourceArn')
-            break
-          #endIf
+    if (elbIIds):
+      for elbIId in elbIIds:
+        response = self.elbv2Client.describe_tags(ResourceArns=[elbIId])
+        if (not response):
+          raise AWSStackResourceException("Empty response for ELBv2 Client describe_tags() for Elastic Load Balancer with ARN: %s" % elbIId)
         #endIf
-      #endFor
       
-      if (elbResourceId): break
-    #endFor
+        tagDescriptions = response.get('TagDescriptions')
+        if (len(tagDescriptions) != 1):
+          raise AWSStackResourceException("Unexpected number of TagDescriptions in describe_tags() response from ELB with ARN: %s" % elbIId)
+        #endIf
+        
+        tagDescription = tagDescriptions[0]
+        tags = tagDescription.get('Tags')
+        if (not tags):
+          raise AWSStackResourceException("All Elastic Load Balancers must have at least a Name tag.  No tags found for ELB with ARN: %s" % elbIId)
+        #endIf
+        
+        for tag in tags:
+          if (tag.get('Key') == 'Name'):
+            if (tag.get('Value') == elbName):
+              elbResourceId = tagDescription.get('ResourceArn')
+              break
+            #endIf
+          #endIf
+        #endFor
+        
+        if (elbResourceId): break
+      #endFor
+    #endIf
     
     return elbResourceId
   #endDef
   
   
-  def getLoadBalancerDNSName(self,stackId,elbName=None):
+  def getLoadBalancerDNSName(self,stackIds,elbName=None):
     """
       Return the DNSName for the Elastic Load Balancer V2 with the given name as the value
       of its Name tag.
+      
+      The stackIds parameter holds the list of all the stacks in the CFN deployment.  
+      It is assumed there is only 1 ELB in all of those stacks with the given name.
+      (The DNSName of the first one found with the given name gets returned.)
       
       The boto3 API for ELBs is rather baroque.
       
@@ -264,40 +283,43 @@ class ConfigureICP:
       Once we have the ELB ARN, we can get its DNSName with a call to describe_load_balancers().
     """
     
-    if (not stackId):
-      raise MissingArgumentException("A stack ID (stackId) is required.")
+    if (not stackIds):
+      raise MissingArgumentException("A list of stack IDs (stackIds) is required.")
     #endIf
     
     if (not elbName):
       raise MissingArgumentException("The ELB name must be provided.")
     #endIf
 
-    elbIId = self.getELBResourceIdForName(stackId, elbName=elbName)
+    dnsName = ""
     
-    if (not elbIId):
-      raise AWSStackResourceException("No Elastic Load Balancer defined with Name tag: %s" % elbName)
-    #endIf
+    for stackId in stackIds:
+      elbIId = self.getELBResourceIdForName(stackId, elbName=elbName)
+      
+      if (elbIId):
+        response = self.elbv2Client.describe_load_balancers(LoadBalancerArns=[elbIId])
+        if (not response):
+          raise AWSStackResourceException("Empty response for ELBv2 Client describe_load_balancers() call for ELB with ARN: %s" % elbIId)
+        #endIf
     
-    response = self.elbv2Client.describe_load_balancers(LoadBalancerArns=[elbIId])
-    if (not response):
-      raise AWSStackResourceException("Empty response for ELBv2 Client describe_load_balancers() call for ELB with ARN: %s" % elbIId)
-    #endIf
+        loadBalancers = response.get('LoadBalancers')
+        if (not loadBalancers):
+          raise AWSStackResourceException("No LoadBalancers in response for ELBv2 Client describe_load_balancers() call for ELB with ARN: %s" % elbIId)
+        #endIf
     
-    loadBalancers = response.get('LoadBalancers')
-    if (not loadBalancers):
-      raise AWSStackResourceException("No LoadBalancers in response for ELBv2 Client describe_load_balancers() call for ELB with ARN: %s" % elbIId)
-    #endIf
+        if (len(loadBalancers) != 1):
+          raise AWSStackResourceException("Unexpected number of LoadBalancers from ELBv2 Client describe_load_balancers() call for ELB with ARN: %s" % elbIId)
+        #endIf
     
-    if (len(loadBalancers) != 1):
-      raise AWSStackResourceException("Unexpected number of LoadBalancers from ELBv2 Client describe_load_balancers() call for ELB with ARN: %s" % elbIId)
-    #endIf
+        loadBalancer = loadBalancers[0]
     
-    loadBalancer = loadBalancers[0]
-    
-    dnsName = loadBalancer.get('DNSName')
-    if (not dnsName):
-      raise AWSStackResourceException("Empty DNSName attribute for ELB with ARN: %s" % elbIId)
-    #endIf
+        dnsName = loadBalancer.get('DNSName')
+        if (not dnsName):
+          raise AWSStackResourceException("Empty DNSName attribute for ELB with ARN: %s" % elbIId)
+        #endIf
+        break
+      #endIf
+    #endFor
     
     return dnsName
   #endDef
@@ -325,7 +347,43 @@ class ConfigureICP:
     #endFor
     return result
   #endDef
+  
+  
+  def _transformExcludedMgmtServices(self,excludedServices):
+    """
+      Return a list of strings that are the names of the services to be excluded.
+      
+      The incoming excludedServices parameter may be a list of strings or the string
+      representation of a list using commas to delimit the items in the list.
+      (The value of ExcludedMgmtServices in the AWS CF template is a CommaDelimitedList 
+      which is just such a string.)
+      
+      The items in the incoming list are converted to all lowercase characters and trimmed.
+      
+      If the incoming value in excludedServices is the empty string, then an empty list
+      is returned.
+    """
     
+    result = []
+    if (excludedServices):
+      if (type(excludedServices) != type([])):
+        # assume excludedServices is a string
+        excludedServices = [x.strip() for x in excludedServices.split(',')]
+      #endIf
+      
+      excludedServices = [x.lower() for x in excludedServices]
+      
+      for x in excludedServices:
+        if (x not in OptionalManagementServices):
+          raise ICPInstallationException("Service: %s is not an optional management service.  It must be one of: %s" % (x,OptionalManagementServices))
+        #endIf
+      #endFor
+      
+      result = excludedServices
+    #endIf
+    return result
+  #endDef
+  
   
   def createConfigFile(self, configFilePath):
     """
@@ -358,6 +416,10 @@ class ConfigureICP:
               configFile.write("%s\n" % line)
             else:
               parmValue = self.parameters[parmName]
+              # special processing for excluded mgmt services value
+              if (parmName == 'ExcludedMgmtServices'):
+                parmValue = self._transformExcludedMgmtServices(parmValue)
+              #endIf
               macro = "${%s}" % macroName
               if (TR.isLoggable(Level.FINEST)):
                 TR.finest(methodName,"LINE: %s\n\tReplacing: %s with: %s" % (line,macro,parmValue))
@@ -375,6 +437,7 @@ class ConfigureICP:
       #endWith 
     except IOError as e:
       TR.error(methodName,"IOError creating configuration file: %s from template file: %s" % (configFilePath,self.tempatePath), e)
+      raise
     #endTry
     
   #endDef
