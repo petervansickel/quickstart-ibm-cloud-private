@@ -106,18 +106,11 @@ Metadata:
         default: Management Node Count
       ResourceOwner:
         default: Resource Owner
-      RootStackId:
-        default: Root Stack Resource Identifier
       RootStackName:
         default: Root Stack Name
 
 Parameters:
   # Variables are declared in alphabetical order.
-  ClusterSubnetCidr:
-    Description: >-
-      ClusterSubnetCidr resource ID from the parent template
-    Type: String
-
   DockerInstallBinaryPath:
     Description: >-
       The path to the Docker install binary in the ICP bucket.
@@ -148,19 +141,14 @@ Parameters:
       The path in the ICP bootstrap S3 bucket to the ICP cluster node script package (zip) file.  Cluster nodes are master, proxy, worker, management, vulnerability advisor.
     Type: String
 
-  ICPClusterSubnet:
+  ClusterVPCSubnet:
     Description: >-
-      ICPClusterSubnet resource ID from the parent template.
+      ClusterVPCSubnet resource ID from the parent template.
     Type: String
 
   ICPDeploymentLogsBucketName:
     Description: >-
       The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
-    Type: String
-
-  ICPGatewayAttachment:
-    Description: >-
-      ICPGatewayAttachment resource ID from the parent stack
     Type: String
 
   ICPHostProfile:
@@ -230,14 +218,9 @@ Parameters:
       Value for the owner tag for the deployed resource associated with the stack.
     Type: String
 
-  RootStackId:
-    Description: >-
-      The AWS resource ID for the root stack.
-    Type: String
-
   RootStackName:
     Description: >-
-      The root stack name.
+      The root stack name. The root stack name is used as the common unique name for the Kubernetes tag on all EC2 instances in the cluster.
     Type: String
 
 Mappings:
@@ -291,6 +274,8 @@ Resources:
             apt:
               sysstat: []
               awscli: []
+              nfs-common: []
+              socat: []            
             python:
               pycryptodome: []
               boto3: []
@@ -324,8 +309,9 @@ Resources:
           files:
             /root/mystack.props:
               content: !Sub |
+                REGION=${AWS::Region}
                 STACK_NAME=${RootStackName}
-                STACK_ID="${RootStackId}"
+                STACK_ID="${AWS::StackId}"
                 ROLE=management
 
             /root/.aws/config:
@@ -380,7 +366,7 @@ Resources:
     Properties:
       LaunchConfigurationName: !Ref ManagementNodeLaunchConfiguration
       VPCZoneIdentifier:
-        - !Ref ICPClusterSubnet
+        - !Ref ClusterVPCSubnet
       DesiredCapacity: !Ref ManagementNodeCount
       MinSize: 1
       MaxSize: 3

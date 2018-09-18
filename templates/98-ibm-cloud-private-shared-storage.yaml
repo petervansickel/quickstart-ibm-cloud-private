@@ -90,3 +90,13 @@ Outputs:
     Description: >-
       The EFS file system to be used for shared storage by the master nodes and worker nodes.
     Value: !Ref ClusterSharedStorage
+
+  EFSDNSName:
+    Description: >-
+      The EFS server public DNS name used for mounting EFS volumes.
+    Value: !Join
+        - "."
+        - - !Ref ClusterSharedStorage
+          - efs
+          - !Ref AWS::Region
+          - amazonaws.com

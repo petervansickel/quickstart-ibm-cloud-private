@@ -70,8 +70,8 @@ Metadata:
       - Label:
           default: Network Parameters
         Parameters:
-          - ExternalICPAdminSecurityGroup
           - ExternalSSHSecurityGroup
+          - ICPMasterSecurityGroup
           - InternalICPSecurityGroup
           - InternalSSHSecurityGroup
           - MasterNode8001TargetGroup
@@ -111,16 +111,14 @@ Metadata:
         default: Master Node Count
       ResourceOwner:
         default: Resource Owner
-      RootStackId:
-        default: Root Stack Resource Identifier
       RootStackName:
         default: Root Stack Name
 
 Parameters:
   # Variables are declared in alphabetical order.
-  ClusterSubnetCidr:
+  ClusterVPCSubnet:
     Description: >-
-      ClusterSubnetCidr resource ID from the parent template
+      ClusterVPCSubnet resource ID from the parent template.
     Type: String
 
   DockerInstallBinaryPath:
@@ -128,11 +126,11 @@ Parameters:
       The path to the Docker install binary in the ICP bucket.
     Type: String
 
-  ExternalICPAdminSecurityGroup:
+  EFSDNSName:
     Description: >-
-      ExternalICPAdminSecurityGroup resource ID from the parent stack
+      The EFS server public DNS name providing shared storage used by the master nodes for the various mount points they need to share, i.e., docker registry, kubernetes audit log, ICP audit log.  Used by the master node initialization script when there is more than 1 master node.
     Type: String
-    
+
   ExternalSSHSecurityGroup:
     Description: >-
       ExternalSSHSecurityGroup resource ID from the parant stack
@@ -158,24 +156,19 @@ Parameters:
       The path in the ICP bootstrap S3 bucket to the ICP cluster node script package (zip) file.  Cluster nodes are master, proxy, worker, management, vulnerability advisor.
     Type: String
 
-  ICPClusterSubnet:
-    Description: >-
-      ICPClusterSubnet resource ID from the parent template.
-    Type: String
-
   ICPDeploymentLogsBucketName:
     Description: >-
       The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
     Type: String
 
-  ICPGatewayAttachment:
-    Description: >-
-      ICPGatewayAttachment resource ID from the parent stack
-    Type: String
-
   ICPHostProfile:
     Description: >-
       ICPHostProfile resource ID from the parent stack
+    Type: String
+
+  ICPMasterSecurityGroup:
+    Description: >-
+      ICPMasterSecurityGroup resource ID from the parent stack
     Type: String
 
   ICPScriptBucketName:
@@ -214,26 +207,6 @@ Parameters:
       - false
     Default: true
 
-  MasterNode8001TargetGroup:
-    Description: >-
-      MasterNode8001TargetGroup resouce ID from the parent stack
-    Type: String
-
-  MasterNode8443TargetGroup:
-    Description: >-
-      MasterNode8443TargetGroup resouce ID from the parent stack
-    Type: String
-
-  MasterNode8500TargetGroup:
-    Description: >-
-      MasterNode8500TargetGroup resouce ID from the parent stack
-    Type: String
-
-  MasterNode9443TargetGroup:
-    Description: >-
-      MasterNode9443TargetGroup resouce ID from the parent stack
-    Type: String
-
   MasterNodeCount:
     Description: >-
       Number of master nodes to be deployed in the ICP cluster. Must be an odd number. For a development deployment 1 is sufficient. For production deployments typically 3 or 5.
@@ -260,14 +233,9 @@ Parameters:
       Value for the owner tag for the deployed resource associated with the stack.
     Type: String
 
-  RootStackId:
-    Description: >-
-      The AWS resource ID for the root stack.
-    Type: String
-
   RootStackName:
     Description: >-
-      The root stack name.
+      The root stack name. The root stack name is used as the common unique name for the Kubernetes tag on all EC2 instances in the cluster.
     Type: String
 
 Mappings:
@@ -297,6 +265,92 @@ Mappings:
 
 Resources:
 
+  MasterNodeLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: network
+      Subnets:
+        - !Ref ClusterVPCSubnet
+      Tags:
+          # Name tag is needed by the scripting to get config parameter
+          # value for the cluster_lb_address
+        - Key: Name
+          Value: MasterNodeLoadBalancer
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: !Sub kubernetes.io/cluster/${RootStackName}
+          Value: !Ref RootStackName
+
+
+  MasterNode8443TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8443
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNode8001TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8001
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNode9443TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 9443
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNode8500TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 8500
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  MasterNodeLoadBalancer8443Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode8443TargetGroup
+      Port: 8443
+      Protocol: TCP
+
+  MasterNodeLoadBalancer8001Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode8001TargetGroup
+      Port: 8001
+      Protocol: TCP
+
+  MasterNodeLoadBalancer9443Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode9443TargetGroup
+      Port: 9443
+      Protocol: TCP
+
+  MasterNodeLoadBalancer8500Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref MasterNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref MasterNode8500TargetGroup
+      Port: 8500
+      Protocol: TCP
+
   MasterNodeLaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Metadata:
@@ -321,6 +375,8 @@ Resources:
             apt:
               sysstat: []
               awscli: []
+              nfs-common: []
+              socat: []
             python:
               pycryptodome: []
               boto3: []
@@ -340,8 +396,6 @@ Resources:
               source: !Sub
                 - https://${ArchiveBucketName}.s3-${AWS::Region}.amazonaws.com/${ArchivePath}
                 - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref ICPArchivePath }
-              # Mode bits are getting mucked with, need to investigate
-              # The result is octal 436 when this gets deployed
               mode: '000664'
               owner: root
               group: root
@@ -356,8 +410,9 @@ Resources:
           files:
             /root/mystack.props:
               content: !Sub |
+                REGION=${AWS::Region}
                 STACK_NAME=${RootStackName}
-                STACK_ID="${RootStackId}"
+                STACK_ID="${AWS::StackId}"
                 ROLE=master
 
             /root/.aws/config:
@@ -395,8 +450,9 @@ Resources:
             /root/nodeinit.sh --os ubuntu
 
       SecurityGroups:
-        - !Ref ExternalICPAdminSecurityGroup
+        # All security groups reference the VPC (using VpcId attribute)
         - !Ref ExternalSSHSecurityGroup
+        - !Ref ICPMasterSecurityGroup
         - !Ref InternalICPSecurityGroup
         - !Ref InternalSSHSecurityGroup
 
@@ -408,12 +464,13 @@ Resources:
             VolumeSize: 300
             Iops: 8000
 
+
   MasterNodeAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       LaunchConfigurationName: !Ref MasterNodeLaunchConfiguration
       VPCZoneIdentifier:
-        - !Ref ICPClusterSubnet
+        - !Ref ClusterVPCSubnet
       TargetGroupARNs:
         - !Ref MasterNode8001TargetGroup
         - !Ref MasterNode8443TargetGroup
@@ -430,11 +487,22 @@ Resources:
           Value: Master
           PropagateAtLaunch: true
         - Key: !Sub kubernetes.io/cluster/${RootStackName}
-          Value: ${RootStackName}
+          Value: !Ref RootStackName
           PropagateAtLaunch: true
+
 
 Outputs:
   StackId:
     Description: >-
       The Master node stack resource ID.  Needed for introspection of the master  node stack to pull out the EC2 instance information.
     Value: !Ref AWS::StackId
+
+  MasterNodeLoadBalancerDNSName:
+    Description: >-
+      The master node Elastic Load Balancer (ELB) DNS name (used in Route53 record set).
+    Value: !GetAtt MasterNodeLoadBalancer.DNSName
+
+  MasterNodeLoadBalancerHostedZoneID:
+    Description: >-
+      The master node Elastic Load Balancer (ELB) hosted zone ID (used in Route53 record set).
+    Value: !GetAtt MasterNodeLoadBalancer.CanonicalHostedZoneID

@@ -59,15 +59,14 @@ StackParameterNames = []
 
 class EFSVolume:
   """
-    Simple class to manage and EFS volume.
+    Simple class to manage an EFS volume.
   """
   
-  def __init__(self,fileSystem,region,mountPoint):
+  def __init__(self,efsServer,mountPoint):
     """
       Constructor
     """
-    self.fileSystem = fileSystem,
-    self.region = region
+    self.efsServer = efsServer
     self.mountPoint = mountPoint
   #endDef
   
@@ -619,8 +618,17 @@ class NodeInit(object):
       volumes is either a singleton instance of EFSVolume or a list of instances
       of EFSVolume.  EFSVolume has everything needed to mount the volume on a
       given mount point.
+      
+      NOTE: It is assumed that nfs-utils (RHEL) or nfs-common (Ubuntu) has been
+      installed on the nodes were EFS mounts are implemented.
+
+      Depending on what EFS example you look at the options to the mount command vary.
+      The options used in this method are from this AWS documentation:
+      https://docs.aws.amazon.com/efs/latest/ug/wt1-test.html
+      Step 3.3 has the mount command template and the options are:
+      nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport
     """
-    methodName = "mountNFSVolumes"
+    methodName = "mountEFSVolumes"
     
     if (not volumes):
       raise MissingArgumentException("One or more EFS volumes must be provided.")
@@ -629,25 +637,25 @@ class NodeInit(object):
     if (type(volumes) != type([])):
       volumes = [volumes]
     #endIf
+
+    # See method doc above for AWS source for mount options used in the loop body below.
+    options = "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport"
     
     for volume in volumes:
       if (not os.path.exists(volume.mountPoint)):
-        os.makedirs(volume.mountPoint,'rw')
+        os.makedirs(volume.mountPoint)
         TR.info(methodName,"Created directory for EFS mount point: %s" % volume.mountPoint)
       elif (not os.path.isdir(volume.mountPoint)):
         raise Exception("EFS mount point path: %s exists but is not a directory." % volume.mountPoint)
       else:
         TR.info(methodName,"EFS mount point: %s already exists." % volume.mountPoint)
       #endIf
-      
-      retcode = call("mount -t nfs4 -o nfsvers=4.1 %s.efs.%s.amonzonaws.com:/ %s" % (volume.fileSystem,volume.region,volume.mountPoint), shell=True)
+      retcode = call("mount -t nfs4 -o %s %s:/ %s" % (options,volume.efsServer,volume.mountPoint), shell=True)
       if (retcode != 0):
-        raise Exception("Error return code: %s mounting EFS volume: %s in region: %s on mount point: %s" % (retcode,volume.fileSystem,volume.region,volume.mountPoint))
+        raise Exception("Error return code: %s mounting to EFS server: %s with mount point: %s" % (retcode,volume.efsServer,volume.mountPoint))
       #endIf
-
+      TR.info(methodName,"%s mounted on EFS server: %s:/ with options: %s" % (volume.mountPoint,volume.efsServer,options))
     #endFor
-    
-    
   #endDef
   
   
@@ -686,7 +694,7 @@ class NodeInit(object):
     #endIf
   #endDef
 
-  
+
   def main(self,argv):
     """
       Main does command line argument processing, sets up trace and then kicks off the methods to
@@ -765,8 +773,8 @@ class NodeInit(object):
       # NOTE: All CFN outputs, parameters are strings even when the Type is Number.
       # Hence, the conversion of MasterNodeCount to an int.
       if (self.role == 'master' and int(self.MasterNodeCount) > 1):
-        efsId = self.ClusterSharedStorage # An input to the master stack
-        efsVolumes = [EFSVolume(efsId,region,mountPoint) for mountPoint in ['/var/lib/registry','/var/lib/icp/audit','/var/log/audit']]
+        efsServer = self.EFSDNSName # An input to the master stack
+        efsVolumes = [EFSVolume(efsServer,mountPoint) for mountPoint in ['/var/lib/registry','/var/lib/icp/audit','/var/log/audit']]
         self.mountEFSVolumes(efsVolumes)
       #endIf
             

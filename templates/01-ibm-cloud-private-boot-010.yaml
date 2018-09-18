@@ -136,27 +136,23 @@ Metadata:
 
 Parameters:
   # Variables are declared in alphabetical order.
-  BootNodeInstanceType:
-    Description: ICP boot node AWS EC2 instance type
+  ApplicationStorageMountPoint:
+    Description: >-
+      Mount point for the EFS volume to be used for application shared storage.  The Kubernetes EFS provisioner uses this mount point. Used by the bootstrap script.
     Type: String
-    Default: m5d.xlarge
-    AllowedValues:
-      - t2.micro
-      - t2.large
-      - t2.xlarge
-      - t2.2xlarge
-      - m5.large
-      - m5.xlarge
-      - m5d.large
-      - m5d.xlarge
-    ConstraintDescription: Must be a valid EC2 instance type.
+    Default: /storage
+
+  BootNodeInstanceType:
+    Description: ICP boot node AWS EC2 instance type passed in from parent stack.
+    Type: String
+    Default: m5.xlarge
 
   ClusterCADomain:
     Description: >-
       The Certificate Authority (CA) domain used for the CN in the CA key.  The default is to
       use the cluster name concatenated with the cluster domain.
     Type: String
-    Default: mycluster.icp.local
+    Default: mycluster.icp
 
   ClusterCIDR:
     Description: >-
@@ -174,7 +170,7 @@ Parameters:
     Description: >-
       The network domain of the cluster.
     Type: String
-    Default: icp.local
+    Default: icp
 
   ClusterName:
     Description: >-
@@ -182,34 +178,20 @@ Parameters:
     Type: String
     Default: mycluster
 
-  ClusterSubnetCidr:
-    Description: >-
-      The CIDR for the ICP cluster subnet.
-    Type: String
-    MinLength: 9
-    MaxLength: 18
-    Default: 10.0.0.0/24
-    AllowedPattern: >-
-      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
-    ConstraintDescription: >-
-      Must be a valid IP CIDR range of the form x.x.x.x/x.
-
   DockerInstallBinaryPath:
     Description: >-
       The path to the Docker install binary in the ICP bucket.
     Type: String
 
-  ExternalSSHLocation:
+  EFSDNSName:
     Description: >-
-      The IP address range that can be used to SSH to the EC2 instances from the external network.
+      The EFS server public DNS name providing shared storage used for application shared storage.  The boot node configures a volume and mounts it at the ApplicationStorageMountPoint. Used by the boostrap script.
     Type: String
-    MinLength: 9
-    MaxLength: 18
-    Default: 0.0.0.0/0
-    AllowedPattern: >-
-      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
-    ConstraintDescription: >-
-      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  ExternalSSHSecurityGroup:
+    Description: >-
+      The ExternalSSHSecurityGroup resource ID from the parent template.
+    Type: String
 
   FixpackInceptionImageName:
     Description: >-
@@ -249,9 +231,26 @@ Parameters:
       The path in the ICP bootstrap S3 bucket to the ICP Boot node script package (zip) file.
     Type: String
 
-  ICPClusterSubnet:
+  ClusterDomain:
     Description: >-
-      The ICPClusterSubnet resource ID from the parent stack.
+      The network domain of the cluster.
+    Type: String
+    Default: icp
+
+  ClusterName:
+    Description: >-
+      The name of the cluster.
+    Type: String
+    Default: mycluster
+
+  ClusterVPCSubnet:
+    Description: >-
+      The ClusterVPCSubnet resource ID from the parent stack.
+    Type: String
+
+  ICPArchivePath:
+    Description: >-
+      The path to the ICP install archive in the ICP bucket provide by the parent stack. Used in the bootstrap script.
     Type: String
 
   ICPDeploymentLogsBucketName:
@@ -276,7 +275,7 @@ Parameters:
 
   ICPVersion:
     Description: >-
-      The version of ICP to be deployed.
+      The version of ICP to be deployed. Provided by the parent stack.  Used in the bootstrap script.
     Type: String
 
   InceptionImageName:
@@ -295,9 +294,17 @@ Parameters:
       Indicate yes to install an ICP fixpack.  Indicate no if there is no fixpack to install or the fixpack installation is to be skipped.
     Type: String
     Default: Yes
-    AllowedValues:
-      - Yes
-      - No
+
+  InternalSSHSecurityGroup:
+    Description: >-
+      The InternalSSHSecurityGroup resource ID from the parent template.
+    Type: String
+
+  InceptionTimeout:
+    Description: >-
+      The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  Provided by the parent stack.  Used in the bootstrap script.
+    Type: Number
+    Default: 7200
 
   KeyName:
     Description: >-
@@ -309,10 +316,7 @@ Parameters:
     Description: >-
       When true, load the IBM Cloud Private images into the local Docker registry on each node using an archive extraction command run directly on each node.  When false, load the ICP images using an Ansible playbook launched from the Boot node. This variable is used for experiments in comparing different installation techniquies.
     Type: String
-    AllowedValues:
-      - true
-      - false
-    Default: true
+    Default: True
 
   ResourceOwner:
     Description: >-
@@ -357,9 +361,6 @@ Parameters:
     Description: >-
       Configure a private Docker registry on the Boot node. Load the private registry with the IBM Cloud Private images. Install ICP using the private registry. (Not Available Yet)
     Type: String
-    AllowedValues:
-      - True
-      - False
     Default: False
 
   X509CommonName:
@@ -395,40 +396,6 @@ Mappings:
 
 Resources:
 
-  ExternalSSHSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      VpcId: !Ref IBMCloudPrivateVPC
-      GroupDescription: >-
-        Security group enabling external SSH access
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: !Ref ExternalSSHLocation
-      Tags:
-        - Key: Name
-          Value: ExternalSSHSecurityGroup
-        - Key: Owner
-          Value: !Ref ResourceOwner
-
-  InternalSSHSecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      VpcId: !Ref IBMCloudPrivateVPC
-      GroupDescription: >-
-        Security group enabling internal SSH access from the boot node to the cluster member nodes
-      SecurityGroupIngress:
-        - IpProtocol: tcp
-          FromPort: 22
-          ToPort: 22
-          CidrIp: !Ref ClusterSubnetCidr
-      Tags:
-        - Key: Name
-          Value: InternalSSHSecurityGroup
-        - Key: Owner
-          Value: !Ref ResourceOwner
-
   ICPBootNode:
     Type: AWS::EC2::Instance
     Metadata:
@@ -459,6 +426,8 @@ Resources:
               sysstat: []
               awscli: []
               ansible: []
+              nfs-common: []
+              socat: []
             python:
               pycryptodome: []
               boto3: []
@@ -504,11 +473,17 @@ Resources:
              - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPBootNodeScriptPackagePath }
 
         StackPropertiesFile:
+          # The boot node needs both root stackId to get
+          # the output that holds all the other stack Ids
+          # It needs its own stackId to pick up its input
+          # parameters.
           files:
             /root/mystack.props:
               content: !Sub |
+                REGION=${AWS::Region}
                 STACK_NAME=${RootStackName}
-                STACK_ID="${RootStackId}"
+                ROOT_STACK_ID="${RootStackId}"
+                STACK_ID="${AWS::StackId}"
                 ROLE=boot
 
             /root/.aws/config:
@@ -526,12 +501,13 @@ Resources:
           - Ubuntu16
 
       NetworkInterfaces:
-        - GroupSet:
+        - Description: Primary boot node network interface
+          GroupSet:
             - !Ref ExternalSSHSecurityGroup
           AssociatePublicIpAddress: true
           DeviceIndex: "0"
           DeleteOnTermination: true
-          SubnetId: !Ref ICPClusterSubnet
+          SubnetId: !Ref ClusterVPCSubnet
 
       BlockDeviceMappings:
         - DeviceName: /dev/sda1

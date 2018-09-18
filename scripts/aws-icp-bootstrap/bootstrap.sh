@@ -88,11 +88,12 @@ if [ -z "$os" ]; then
   #exit 3
 fi
 
-# The mystack.props file holds the env vars STACK_ID and STACK_NAME used to invoke bootstrap.py below.
+# The mystack.props file holds the env vars ROOT_STACK_ID, STACK_ID and STACK_NAME, ROLE used to 
+# invoke bootstrap.py below.
 # The mystack.props file is written out to root's home directory by the CloudFormation template.
 source ~/mystack.props
 
 # Hack to make scripts executable.
 chmod +x scripts/*.sh
 
-~/bootstrap.py --stackid "${STACK_ID}" --stack-name ${STACK_NAME} --role ${ROLE} --logfile $LOGFILE --loglevel "*=all"
+~/bootstrap.py --root-stackid "${ROOT_STACK_ID}" --stackid "${STACK_ID}" --stack-name ${STACK_NAME} --role ${ROLE} --logfile $LOGFILE --loglevel "*=all"

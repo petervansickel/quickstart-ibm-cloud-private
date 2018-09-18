@@ -135,10 +135,29 @@ SSMParameterKeys = []
 
 TR = Trace(__name__)
 
+class EFSVolume:
+  """
+    Simple class to manage an EFS volume.
+  """
+  
+  def __init__(self,efsServer,mountPoint):
+    """
+      Constructor
+    """
+    self.efsServer = efsServer
+    self.mountPoint = mountPoint
+  #endDef
+  
+#endClass
+
+
 class Host:
   """
     Simple class to hold information about an ICP host needed to create the hosts file
     used in the ICP installation.
+    
+    The instanceId is the EC2 instance ID that can be used to work with the instance
+    using the boto3 Python library.
     
     Helper class to the Bootstrap class.
   """
@@ -166,6 +185,7 @@ class Bootstrap(object):
   ArgsSignature = {
                     '--help': 'string',
                     '--stack-name': 'string',
+                    '--root-stackid': 'string',
                     '--stackid': 'string',
                     '--role': 'string',
                     '--logfile': 'string',
@@ -365,7 +385,7 @@ class Bootstrap(object):
     
     # Add the bootstrap related parameter keys
     SSMParameterKeys.append("/%s/boot-public-key" % stackName)
-    SSMParameterKeys.append("/%s/docker-installation" % self.stackName)
+    SSMParameterKeys.append("/%s/docker-installation" % self.rootStackName)
     
   #endDef
   
@@ -408,11 +428,17 @@ class Bootstrap(object):
   #endDef
   
   
-  def _init(self, stackId, stackName):
+  def _init(self, rootStackId, rootStackName, bootStackId):
     """
       Additional initialization of the Bootstrap instance based on stack parameters.
       
-      Invoke getStackParameters() gets all the CloudFormation stack parameters imported
+      The rootStackId is passed along in position 0 of the list of stack IDs that 
+      is set to the stackIds instance variable.
+      
+      The rootStackName is used as part of the SSM parameter key.  All of the cluster 
+      nodes expect to see parameters based on the root stack name.
+      
+      Invoke _getStackParameters() gets all the CloudFormation stack parameters imported
       into the StackParmaters dictionary to make them available for use with the Bootstrap 
       instance as instance variables via __getattr__().
       
@@ -424,7 +450,7 @@ class Bootstrap(object):
     methodName = "_init"
     global StackParameters, StackParameterNames
     
-    StackParameters = self._getStackParameters(stackId)
+    StackParameters = self._getStackParameters(bootStackId)
     StackParameterNames = StackParameters.keys()
     
     if (TR.isLoggable(Level.FINEST)):
@@ -470,8 +496,8 @@ class Bootstrap(object):
     self.CN = self.getCommonName()
 
     # Root stack ID is in position 0 of the stackIds list
-    self.stackIds = [ stackId ]
-    nestedStacks =  self._getNestedStacks(stackId)
+    self.stackIds = [ rootStackId ]
+    nestedStacks =  self._getNestedStacks(rootStackId)
     if (not nestedStacks):
       raise AWSStackResourceException("The root stack is expected to have several nested stacks, but none were found.")
     #endIf
@@ -479,7 +505,8 @@ class Bootstrap(object):
     
     self._getHosts(self.stackIds)
 
-    self._getSSMParameterKeys(stackName)
+    self._getSSMParameterKeys(rootStackName)
+        
   #endDef
   
   
@@ -505,7 +532,7 @@ class Bootstrap(object):
   #endIf
   
   
-  def _listAutoScalingGroupEC2Instances(self, asgIds):
+  def _getAutoScalingGroupEC2Instances(self, asgIds):
     """
       Return a list of EC2 instance IDs for the members of the given auto-scaling groups
       with the given auto-scaling-group IDs.
@@ -540,7 +567,7 @@ class Bootstrap(object):
   #endDef
   
   
-  def _listEC2Instances(self, stackId):
+  def _getEC2Instances(self, stackId):
     """
       Return a list of EC2 instance IDs deployed in the given stack.
       The instances can be deployed atomically or as a member of an auto-scaling group.
@@ -572,7 +599,7 @@ class Bootstrap(object):
         result.append(ec2InstanceId)        
       #endIf
       if (resourceType == 'AWS::AutoScaling::AutoScalingGroup'):
-        ec2InstanceIds = self._listAutoScalingGroupEC2Instances(resource.get('PhysicalResourceId'))
+        ec2InstanceIds = self._getAutoScalingGroupEC2Instances(resource.get('PhysicalResourceId'))
         result.extend(ec2InstanceIds)
       #endIf
     #endFor
@@ -649,7 +676,7 @@ class Bootstrap(object):
     
     ec2InstanceIds = []
     for stackId in stackIds:
-      ec2Ids = self._listEC2Instances(stackId)
+      ec2Ids = self._getEC2Instances(stackId)
       if (ec2Ids):
         ec2InstanceIds.extend(ec2Ids)
       #endIf
@@ -937,7 +964,7 @@ class Bootstrap(object):
     tryCount = 1
     while (hostsNotReady and tryCount <= ClusterHostSyncMaxTryCount):
       for host in hostsNotReady:
-        hostParameter = "/%s/%s" % (self.stackName,host.private_dns_name)
+        hostParameter = "/%s/%s" % (self.rootStackName,host.private_dns_name)
         if (TR.isLoggable(Level.FINE)):
           TR.fine(methodName,"Try: %d, checking readiness of host: %s with role: %s, using SSM Parameter: %s" % (tryCount,host.private_dns_name,host.role,hostParameter))
         #endIf
@@ -1037,7 +1064,7 @@ class Bootstrap(object):
     """
     self.generateSSHKey()
     self.addAuthorizedKey()
-    self.publishSSHPublicKey(self.stackName,self.authorizedKeyEntry)
+    self.publishSSHPublicKey(self.rootStackName,self.authorizedKeyEntry)
   #endDef
   
   
@@ -1245,7 +1272,7 @@ class Bootstrap(object):
     configureICP = ConfigureICP(stackIds=self.stackIds, templatePath=self.configTemplatePath)
     
     TR.info(methodName,"STARTED creating config.yaml file.")
-    configureICP.createConfigFile(os.path.join(self.home,"config.yaml"))
+    configureICP.createConfigFile(os.path.join(self.home,"config.yaml"),self.ICPVersion)
     TR.info(methodName,"COMPLETED creating config.yaml file.")
     
   #endDef
@@ -1416,6 +1443,41 @@ class Bootstrap(object):
   #endDef
   
   
+  def setSourceDestCheck(self, instanceId, value):
+    """
+      Set the SourceDestCheck attribute for the given EC2 intsance to the given value.
+      
+    """
+    methodName = "setSourceDestCheck"
+    
+    instance = self.ec2.Instance(instanceId)
+    TR.info(methodName,"EC2 instance: %s, current value of source_dest_check: %s" % (instanceId,instance.source_dest_check))
+    instance.modify_attribute(SourceDestCheck={ 'Value': value })
+    TR.info(methodName,"EC2 instance: %s, new value of source_dest_check: %s" % (instanceId,value))
+    
+  #endDef
+  
+  
+  def _disableSourceDestCheck(self):
+    """
+      In the context of a Kubernetes cluster the SourceDestCheck needs to be disabled.
+      
+      For auto-scaling groups the SourceDestCheck attribute is not exposed either in 
+      the LaunchConfiguration resource or in the AutoScalingGroup resource, so we set
+      it here for all cluster members.
+    """
+    methodName = "_disableSoureDestCheck"
+    
+    TR.info(methodName,"STARTED disabling of source_dest_check on all cluster members.")
+    hosts = self.getClusterHosts()
+    for host in hosts:
+      self.setSourceDestCheck(host.instanceId, False)
+    #endFor
+    TR.info(methodName,"COMPLETED disabling of source_dest_check on all cluster members.")
+
+  #endDef
+  
+  
   def installICPFixpack(self):
     """
       Install the ICP fixpack.
@@ -1540,6 +1602,54 @@ class Bootstrap(object):
   #endDef
   
   
+  def mountEFSVolumes(self, volumes):
+    """
+      Mount the EFS storage volumes for the audit log and the Docker registry.
+      
+      volumes is either a singleton instance of EFSVolume or a list of instances
+      of EFSVolume.  EFSVolume has everything needed to mount the volume on a
+      given mount point.
+ 
+      NOTE: It is assumed that nfs-utils (RHEL) or nfs-common (Ubuntu) has been
+      installed on the nodes were EFS mounts are implemented.
+     
+      Depending on what EFS example you look at the options to the mount command vary.
+      The options used in this method are from this AWS documentation:
+      https://docs.aws.amazon.com/efs/latest/ug/wt1-test.html
+      Step 3.3 has the mount command template and the options are:
+      nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport
+    """
+    methodName = "mountEFSVolumes"
+    
+    if (not volumes):
+      raise MissingArgumentException("One or more EFS volumes must be provided.")
+    #endIf
+    
+    if (type(volumes) != type([])):
+      volumes = [volumes]
+    #endIf
+
+    # See method doc above for AWS source for mount options used in the loop body below.
+    options = "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport"
+    
+    for volume in volumes:
+      if (not os.path.exists(volume.mountPoint)):
+        os.makedirs(volume.mountPoint)
+        TR.info(methodName,"Created directory for EFS mount point: %s" % volume.mountPoint)
+      elif (not os.path.isdir(volume.mountPoint)):
+        raise Exception("EFS mount point path: %s exists but is not a directory." % volume.mountPoint)
+      else:
+        TR.info(methodName,"EFS mount point: %s already exists." % volume.mountPoint)
+      #endIf
+      retcode = call("mount -t nfs4 -o %s %s:/ %s" % (options,volume.efsServer,volume.mountPoint), shell=True)
+      if (retcode != 0):
+        raise Exception("Error return code: %s mounting to EFS server: %s with mount point: %s" % (retcode,volume.efsServer,volume.mountPoint))
+      #endIf
+      TR.info(methodName,"%s mounted on EFS server: %s:/ with options: %s" % (volume.mountPoint,volume.efsServer,options))
+    #endFor
+  #endDef
+
+  
   def main(self,argv):
     """
       Main does command line argument processing, sets up trace and then kicks off the methods to
@@ -1567,21 +1677,30 @@ class Bootstrap(object):
         TR.info(methodName,"BOOT0102I Tracing with specification: '%s' to log file: '%s'" % (trace,logFile))
       #endIf
       
-      stackId = cmdLineArgs.get('stackid')
-      if (not stackId):
-        raise MissingArgumentException("The root stack ID (--stackid) must be provided.")
+      rootStackId = cmdLineArgs.get('root-stackid')
+      if (not rootStackId):
+        raise MissingArgumentException("The root stack ID (--root-stackid) must be provided.")
       #endIf
 
-      self.rootStackId = stackId
-      TR.info(methodName,"Root stack ID: %s" % stackId)
+      self.rootStackId = rootStackId
+      TR.info(methodName,"Root stack ID: %s" % rootStackId)
       
-      stackName = cmdLineArgs.get('stack-name')
-      if (not stackName):
+      rootStackName = cmdLineArgs.get('stack-name')
+      if (not rootStackName):
         raise MissingArgumentException("The root stack name (--stack-name) must be provided.")
       #endIf
       
-      self.stackName = stackName
-      TR.info(methodName,"Root stack name: %s" % stackName)
+      self.rootStackName = rootStackName
+      TR.info(methodName,"Root stack name: %s" % rootStackName)
+
+      bootStackId = cmdLineArgs.get('stackid')
+      if (not bootStackId):
+        raise MissingArgumentException("The boot stack ID (--stackid) must be provided.")
+      #endIf
+
+      self.bootStackId = bootStackId
+      TR.info(methodName,"Boot stack ID: %s" % bootStackId)
+      
 
       role = cmdLineArgs.get('role')
       if (not role):
@@ -1593,11 +1712,14 @@ class Bootstrap(object):
       
       # Need to wait for the root stack to be fully deployed to get its outputs for
       # the introspection of all the child stacks.
-      self.waitForStackStatus(stackId,desiredStatus='CREATE_COMPLETE')
+      self.waitForStackStatus(rootStackId,desiredStatus='CREATE_COMPLETE')
       
       # Finish off the initialization of the bootstrap class instance
-      self._init(stackId,stackName)
+      self._init(rootStackId,rootStackName,bootStackId)
       
+      # Turn off source/dest check on all cluster members
+      self._disableSourceDestCheck()    
+
       # Using Route53 DNS server rather than /etc/hosts
       # WARNING - Discovered the hard way that the installation overwrites the /etc/hosts file
       # with the cluster IP address and all the other entries are lost.  Happens very late in the install.
@@ -1616,12 +1738,16 @@ class Bootstrap(object):
       self.createSSHKeyScanHostsFile()
       self.sshKeyScan()
       
+      # set vm.max_map_count on all cluster members
+      setMaxMapCountPlaybookPath = os.path.join(self.home,"playbooks", "set-vm-max-mapcount.yaml")
+      self.runAnsiblePlaybook(playbookPath=setMaxMapCountPlaybookPath,targetNodes="all")
+      
       installDockerPlaybookPath = os.path.join(self.home,"playbooks", "install-docker.yaml")
       self.runAnsiblePlaybook(playbookPath=installDockerPlaybookPath,targetNodes="all")
       
       # Notify all cluster nodes that docker installation has completed.
       # Cluster nodes will proceed with loading ICP installation images locally from the ICP install archive. 
-      self.putSSMParameter("/%s/docker-installation" % self.stackName,"COMPLETED",description="Docker installation status.")
+      self.putSSMParameter("/%s/docker-installation" % self.rootStackName,"COMPLETED",description="Docker installation status.")
 
       self.createConfigFile()
       
@@ -1644,7 +1770,13 @@ class Bootstrap(object):
       else:
         self.installICP()        
       #endIf
-            
+
+      # Configure shared storage for applications to use the EFS provisioner
+      efsServer = self.EFSDNSName                    # An input to the boot node
+      mountPoint = self.ApplicationStorageMountPoint # Also a boot node input
+      efsVolumes = EFSVolume(efsServer,mountPoint)
+      self.mountEFSVolumes(efsVolumes)
+    
     except ExitException:
       pass # ExitException is used as a "goto" end of program after emitting help info
 
@@ -1658,8 +1790,8 @@ class Bootstrap(object):
         self._deleteSSMParameters()
       
         # Copy the deployment logs in self.logsHome and icpHome/logs to the S3 bucket for logs.
-        self.exportLogs(self.ICPDeploymentLogsBucketName,self.stackName,self.logsHome)
-        self.exportLogs(self.ICPDeploymentLogsBucketName,self.stackName,"%s/cluster/logs" % self.icpHome)
+        self.exportLogs(self.ICPDeploymentLogsBucketName,self.rootStackName,self.logsHome)
+        self.exportLogs(self.ICPDeploymentLogsBucketName,self.rootStackName,"%s/cluster/logs" % self.icpHome)
       except Exception, e:
         TR.error(methodName,"Exception: %s" % e, e)
         self.rc = 1

@@ -101,12 +101,12 @@ proxy_lb_address: ${PROXY_LB_ADDRESS}
 # vip_manager: etcd
 
 ## High Availability Settings for master nodes
-# vip_iface: eth0
-# cluster_vip: 127.0.1.1
+#vip_iface: ${CLUSTER_VIP_IFACE}
+#cluster_vip: ${CLUSTER_VIP}
 
 ## High Availability Settings for Proxy nodes
-# proxy_vip_iface: eth0
-# proxy_vip: 127.0.1.1
+#proxy_vip_iface: ${PROXY_VIP_IFACE}
+#proxy_vip: ${PROXY_VIP}
 
 ## Federation cluster Settings
 # federation_enabled: false

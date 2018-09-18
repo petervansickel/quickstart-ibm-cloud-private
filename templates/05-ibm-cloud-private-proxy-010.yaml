@@ -70,19 +70,17 @@ Metadata:
       - Label:
           default: Network Parameters
         Parameters:
-          - ExternalApplicationSecurityGroup
+          - ApplicationSecurityGroup
           - ExternalSSHSecurityGroup
           - InternalICPSecurityGroup
           - InternalSSHSecurityGroup
-          - ProxyNode80TargetGroup
-          - ProxyNode443TargetGroup
 
     ParameterLabels:
-      # Some attempt has been made to keep this list in aphabetical order
+      # Parameter labels in aphabetical order
+      ApplicationSecurityGroup:
+        default: External Application Security Group
       DockerInstallBinaryPath:
         default: Docker Install Binary Path
-      ExternalApplicationSecurityGroup:
-        default: External Application Security Group
       ExternalSSHSecurityGroup:
         default: External SSH Security Group
       ICPArchiveBucketName:
@@ -111,26 +109,19 @@ Metadata:
         default: Proxy Node Count
       ResourceOwner:
         default: Resource Owner
-      RootStackId:
-        default: Root Stack Resource Identifier
       RootStackName:
         default: Root Stack Name
 
 Parameters:
   # Variables are declared in alphabetical order.
-  ClusterSubnetCidr:
+  ApplicationSecurityGroup:
     Description: >-
-      ClusterSubnetCidr resource ID from the parent template
+      ApplicationSecurityGroup resource ID from the parent stack
     Type: String
 
   DockerInstallBinaryPath:
     Description: >-
       The path to the Docker install binary in the ICP bucket.
-    Type: String
-
-  ExternalApplicationSecurityGroup:
-    Description: >-
-      ExternalApplicationSecurityGroup resource ID from the parent stack
     Type: String
 
   ExternalSSHSecurityGroup:
@@ -158,19 +149,14 @@ Parameters:
       The path in the ICP bootstrap S3 bucket to the ICP cluster node script package (zip) file.  Cluster nodes are master, proxy, worker, management, vulnerability advisor.
     Type: String
 
-  ICPClusterSubnet:
+  ClusterVPCSubnet:
     Description: >-
-      ICPClusterSubnet resource ID from the parent template.
+      ClusterVPCSubnet resource ID from the parent template.
     Type: String
 
   ICPDeploymentLogsBucketName:
     Description: >-
       The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
-    Type: String
-
-  ICPGatewayAttachment:
-    Description: >-
-      ICPGatewayAttachment resource ID from the parent stack
     Type: String
 
   ICPHostProfile:
@@ -214,16 +200,6 @@ Parameters:
       - false
     Default: true
 
-  ProxyNode80TargetGroup:
-    Description: >-
-      ProxyNode80TargetGroup resouce ID from the parent stack
-    Type: String
-
-  ProxyNode443TargetGroup:
-    Description: >-
-      ProxyNode443TargetGroup resouce ID from the parent stack
-    Type: String
-
   ProxyNodeCount:
     Description: >-
       Number of proxy nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.
@@ -252,14 +228,9 @@ Parameters:
       Value for the owner tag for the deployed resource associated with the stack.
     Type: String
 
-  RootStackId:
-    Description: >-
-      The AWS resource ID for the root stack.
-    Type: String
-
   RootStackName:
     Description: >-
-      The root stack name.
+      The root stack name. The root stack name is used as the common unique name for the Kubernetes tag on all EC2 instances in the cluster.
     Type: String
 
 Mappings:
@@ -289,6 +260,57 @@ Mappings:
 
 Resources:
 
+  ProxyNodeLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: network
+      Subnets:
+        - !Ref ClusterVPCSubnet
+      Tags:
+          # Name tag is needed by the scripting to get config parameter
+          # value for the proxy_lb_address
+        - Key: Name
+          Value: ProxyNodeLoadBalancer
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: !Sub kubernetes.io/cluster/${RootStackName}
+          Value: !Ref RootStackName
+
+  ProxyNode80TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 80
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  ProxyNode443TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 443
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  ProxyNodeLoadBalancer80Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ProxyNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ProxyNode80TargetGroup
+      Port: 80
+      Protocol: TCP
+
+  ProxyNodeLoadBalancer443Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ProxyNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ProxyNode443TargetGroup
+      Port: 443
+      Protocol: TCP
+
   ProxyNodeLaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Metadata:
@@ -313,6 +335,7 @@ Resources:
             apt:
               sysstat: []
               awscli: []
+              socat: []
             python:
               pycryptodome: []
               boto3: []
@@ -344,8 +367,9 @@ Resources:
           files:
             /root/mystack.props:
               content: !Sub |
+                REGION=${AWS::Region}
                 STACK_NAME=${RootStackName}
-                STACK_ID="${RootStackId}"
+                STACK_ID="${AWS::StackId}"
                 ROLE=proxy
 
             /root/.aws/config:
@@ -383,7 +407,8 @@ Resources:
             /root/nodeinit.sh --os ubuntu
 
       SecurityGroups:
-        - !Ref ExternalApplicationSecurityGroup
+        # All security groups reference the VPC (using the VpcId attribute)
+        - !Ref ApplicationSecurityGroup
         - !Ref ExternalSSHSecurityGroup
         - !Ref InternalICPSecurityGroup
         - !Ref InternalSSHSecurityGroup
@@ -401,7 +426,7 @@ Resources:
     Properties:
       LaunchConfigurationName: !Ref ProxyNodeLaunchConfiguration
       VPCZoneIdentifier:
-        - !Ref ICPClusterSubnet
+        - !Ref ClusterVPCSubnet
       TargetGroupARNs:
         - !Ref ProxyNode80TargetGroup
         - !Ref ProxyNode443TargetGroup
@@ -424,3 +449,13 @@ Outputs:
     Description: >-
       The Proxy node stack resource ID.  Needed for introspection of the Proxy node stack to pull out the EC2 instance information.
     Value: !Ref AWS::StackId
+
+  ProxyNodeLoadBalancerDNSName:
+    Description: >-
+      The proxy node Elastic Load Balancer (ELB) DNS name (used in Route53 record set).
+    Value: !GetAtt ProxyNodeLoadBalancer.DNSName
+
+  ProxyNodeLoadBalancerHostedZoneID:
+    Description: >-
+      The proxy node Elastic Load Balancer (ELB) hosted zone ID (used in Route53 record set).
+    Value: !GetAtt ProxyNodeLoadBalancer.CanonicalHostedZoneID
