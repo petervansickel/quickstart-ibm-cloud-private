@@ -12,7 +12,7 @@
 	<property name="QuickStartBucketRootName" value="aws-icp-quickstart" />
 	<property name="AWSRegions" value="us-west-1,us-east-1,us-east-2" />
 
-	<property name="ScriptPackageName" value="aws-icp-bootstrap" />
+	<property name="ScriptPackageName" value="aws-icp-nodeinit" />
 	<property name="ScriptPackageVersion" value="0.9.3" />
 	<property name="ScriptPackageArchive" value="${ScriptPackageName}-v${ScriptPackageVersion}.zip" />
 
