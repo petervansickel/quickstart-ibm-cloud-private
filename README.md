@@ -9,3 +9,5 @@ This README is a table of contents to detailed information for deploying IBM Clo
 [Troubleshooting](docs/when-things-go-wrong.md)
 
 [Limitations](docs/limitiations.md)
+
+[Implementation Details](docs/implementation-details.md)
