@@ -1,4 +1,3 @@
-"""
 # Licensed Material - Property of IBM
 # 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
 # US Government Users Restricted Rights - Use, duplication or disclosure
@@ -12,10 +11,12 @@
 # your use of the sample code, even if IBM has been advised of the possibility 
 # of such damages.
 
+"""
 Created on Aug 6, 2018
 
 @author: Peter Van Sickel - pvs@us.ibm.com
 """
+from subprocess import call
 import socket
 import boto3
 from yapl.utilities.Trace import Trace, Level
@@ -126,7 +127,7 @@ class ConfigureICP(object):
     gets used to drive the installation of IBM Cloud Private (ICP).
   """
 
-  def __init__(self, stackIds=None, templatePath=None, **restArgs):
+  def __init__(self, stackIds=None, configTemplatePath=None, **restArgs):
     """
       Constructor
       
@@ -141,11 +142,11 @@ class ConfigureICP(object):
     self.ec2 = boto3.resource('ec2')
     
     self.rootStackId = '' 
-    self.templatePath = ''
+    self.configTemplatePath = ''
     self.configParameters = {}
     self.vips = {}
-    
-    self._init(stackIds=stackIds, templatePath=templatePath)
+    self.appDomains = []
+    self._init(stackIds=stackIds, configTemplatePath=configTemplatePath, **restArgs)
   #endDef
 
   def __getattr__(self,attributeName):
@@ -180,7 +181,22 @@ class ConfigureICP(object):
   #endDef
 
 
-  def _init(self, stackIds=None, templatePath=None):
+  def getPrimaryAppDomain(self):
+    """
+      Return the first member of the list of application domains provided in ApplicationDomains
+      in the input parameters to the root template.
+      
+      AppicationDomains must have at least one value.
+    """
+    if (not self.appDomains):
+      self.appDomains = self.ApplicationDomains.split(',')
+    #endIf
+    
+    return self.appDomains[0]
+  #endDef
+  
+  
+  def _init(self, stackIds=None, configTemplatePath=None, **restArgs):
     """
       Helper for the __init__() constructor.  
       
@@ -196,12 +212,14 @@ class ConfigureICP(object):
     
     self.rootStackId = stackIds[0]
     
-    if (not templatePath):
+    if (not configTemplatePath):
       raise MissingArgumentException("The path to the config.yaml template file must be provided.")
     #endIf
     
-    self.templatePath = templatePath
+    self.configTemplatePath = configTemplatePath
 
+    self.etcHostsPlaybookPath = restArgs.get('etcHostsPlaybookPath')
+    
     StackParameters = self.getStackParameters(self.rootStackId)
     StackParameterNames = StackParameters.keys()
     
@@ -212,25 +230,57 @@ class ConfigureICP(object):
     
     self.configParameters = self.fillInDefaultValues(**configParms)
 
-    # NOTE: ICP 2.1.0.3 can't handle a DNS name in the cluster_lb_address config.yaml attribute.
-    masterELB = self.getLoadBalancerIPAddress(stackIds,elbName="MasterNodeLoadBalancer")
-    if (not masterELB):
+    self.masterELBAddress = self.getLoadBalancerIPAddress(stackIds,elbName="MasterNodeLoadBalancer")
+    if (not self.masterELBAddress):
       raise ICPInstallationException("An ELB with a Name tag of MasterNodeLoadBalancer was not found.")
     #endIf
-    self.configParameters['ClusterLBAddress'] = masterELB
+
+    # This next block supports different ways to set up the ClusterLBAddress.
+    # It is a debugging ploy. I got tired of changing the script to try out different options.
+    if (self.ClusterLBAddress == 'UseMasterELBAddress'):
+      # NOTE: ICP 2.1.0.3 can't handle a DNS name in the cluster_lb_address config.yaml attribute.
+      masterELB = self.masterELBAddress 
+    elif (self.ClusterLBAddress == 'UseMasterELBName'):
+      masterELB = self.getLoadBalancerDNSName(stackIds,elbName="MasterNodeLoadBalancer")
+    elif (self.ClusterLBAddress == 'UseClusterName'):
+      # In the root CloudFormation template, an alias entry is created in the Route53 DNS 
+      # that maps the master ELB public DNS name to the cluster CN, i.e., the ClusterName.VPCDomain.
+      # Setting the cluster_lb_address to the cluster_CA_domain avoids OAuth issues in mgmt console.
+      masterELB = self.getClusterCN()
+    else:
+      masterELB = self.getClusterCN()
+    #endIf
     
-    # NOTE: ICP 2.1.0.3 can't handle a DNS name in the proxy_lb_address config.yaml attribute.
-    proxyELB = self.getLoadBalancerIPAddress(stackIds,elbName="ProxyNodeLoadBalancer")    
-    if (not proxyELB):
+    self.configParameters['ClusterLBAddress'] = masterELB
+
+    self.proxyELBAddress = self.getLoadBalancerIPAddress(stackIds,elbName="ProxyNodeLoadBalancer")
+    if (not self.proxyELBAddress):
       raise ICPInstallationException("An ELB with a Name tag of ProxyNodeLoadBalancer was not found.")
     #endIf
+    
+    if (self.ProxyLBAddress == 'UseProxyELBAddress'):   
+      # NOTE: ICP 2.1.0.3 can't handle a DNS name in the proxy_lb_address config.yaml attribute.
+      proxyELB = self.proxyELBAddress
+    elif (self.ProxyLBAddress == 'UseProxyELBName'):
+      proxyELB = self.getLoadBalancerDNSName(stackIds,elbName="ProxyNodeLoadBalancer")  
+    elif (self.ProxyLBAddress == 'UsePrimaryAppDomain'):
+      # In the root CloudFormation template, an alias entry is created in the Route53 DNS 
+      # that maps the proxy ELB public DNS name to the primary application domain.
+      # The primary app domain is the first entry in the list of ApplicationDomains passed 
+      # into the root stack.
+      proxyELB = self.getPrimaryAppDomain()
+    else:
+      proxyELB = self.getPrimaryAppDomain()
+    #endIf
+      
     self.configParameters['ProxyLBAddress'] = proxyELB
     
-    self.configParameters['ClusterCADomain'] = self.getCommonName()
+    self.configParameters['ClusterCADomain'] = self.getClusterCN()
     
-    # VIPs are not needed when load balancers are used.
+    # VIPs are not supposed to be needed when load balancers are used.
+    # WARNING: For an AWS deployment, VIPs have never worked. 
+    # Using an EC2::NetworkInterface to get an extra IP doesn't work. 
     #self.vips = self._getVIPs(self.rootStackId)
-    
     #self.configParameters['ClusterVIP'] = self.getVIPAddress("MasterVIP")
     #self.configParameters['ProxyVIP'] = self.getVIPAddress("ProxyVIP")
     
@@ -342,10 +392,8 @@ class ConfigureICP(object):
   
   def getStackParameters(self, stackId):
     """
-      Return a dictionary with stack parameter name-value pairs for
-      stack parameters relevant to the ICP Configuration from the  
+      Return a dictionary with stack parameter name-value pairs from the  
       CloudFormation stack with the given stackId.
-      
     """
     result = {}
     
@@ -404,15 +452,15 @@ class ConfigureICP(object):
   #endDef
   
   
-  def getCommonName(self):
+  def getClusterCN(self):
     """
-      Get the CommonName from the ClusterCADomain stack parameter or 
-      a combination of the ClusterName and ClusterDomain stack parameters.
+      Return the combination of the ClusterName and the VPCDomain
+      
+      The CommonName is used in the PKI certificate that is used by the management console.
     """
-    CN = self.configParameters['ClusterCADomain']
-    if (not CN):
-      CN = "%s.%s" % (self.configParameters['ClusterName'],self.configParameters['ClusterDomain'])
-    #endIf
+    
+    CN = "%s.%s" % (self.ClusterName,self.VPCDomain)
+
     return CN
   #endDef
   
@@ -819,6 +867,10 @@ class ConfigureICP(object):
       raise ICPInstallationException("Unexpected version of ICP: %s" % icpVersion)
     #endIf
     
+    if (self.MasterNodeCount > 1):
+      self.configureEtcHosts()
+    #endIf
+    
   #endDef
   
   
@@ -845,7 +897,7 @@ class ConfigureICP(object):
     parameterNames = list(self.configParameterNames)
     
     try:
-      with open(self.templatePath,'r') as templateFile, open(configFilePath,'w') as configFile:
+      with open(self.configTemplatePath,'r') as templateFile, open(configFilePath,'w') as configFile:
         for line in templateFile:
           # Need to strip the at least the new line characters(s)
           line = line.rstrip()
@@ -911,7 +963,7 @@ class ConfigureICP(object):
     parameterNames = list(self.configParameterNames)
     
     try:
-      with open(self.templatePath,'r') as templateFile, open(configFilePath,'w') as configFile:
+      with open(self.configTemplatePath,'r') as templateFile, open(configFilePath,'w') as configFile:
         for line in templateFile:
           # Need to strip at least the newline character(s)
           line = line.rstrip()
@@ -944,4 +996,57 @@ class ConfigureICP(object):
     #endTry
   #endDef
 
+
+  def runAnsiblePlaybook(self, playbook=None, extraVars=None, inventory="/etc/ansible/hosts"):
+    """
+      Invoke a shell script to run an Ansible playbook with the given arguments.
+      
+      extraVars can be a list of argument values or a single string with space separated argument values.
+        list example: [ "target_nodes=icp", "host_addres=9.876.54.32", "host_name=mycluster.example.com" ]
+        string example: "target_nodes=icp host_addres=9.876.54.32 host_name=mycluster.example.com" 
+      
+    """
+    methodName = "runAnsiblePlaybook"
+    
+    if (not playbook):
+      raise MissingArgumentException("The playbook path must be provided.")
+    #endIf
+    
+    try:
+      if (extraVars):
+        if (type(extraVars) != type([])):
+          # Assume extraVars is a string with space separated values
+          extraVars = extraVars.split()
+        #endIf
+        
+        cmd = ["ansible-playbook", playbook, "--inventory", inventory]
+        for var in extraVars:
+          cmd.extend(["-e", "%s" % var])
+        #endFor
+        TR.info(methodName, "Executing: cmd: %s" % cmd)
+        retcode = call(cmd)
+      else:
+        TR.info(methodName, 'Executing: ansible-playbook %s, --inventory %s.' % (playbook,inventory))
+        retcode = call(["ansible-playbook", playbook, "--inventory", inventory ] )
+      #endIf        
+      if (retcode != 0):
+        raise Exception("Error calling ansible-playbook. Return code: %s" % retcode)
+      else:
+        TR.info(methodName,"ansible-playbook: %s completed." % playbook)
+      #endIf
+    except Exception as e:
+      TR.error(methodName,"Error calling ansible-playbook: %s" % e, e)
+      raise
+    #endTry    
+  #endDef
+
+  def configureEtcHosts(self):
+    """
+      Add an entry to /etc/hosts for all cluster nodes, mapping cluster name to to the master ELB public IP address.
+    """
+    
+    extraVars = ["target_nodes=icp", "host_address=%s" % self.masterELBAddress, "host_name=%s" % self.getClusterCN()]
+    self.runAnsiblePlaybook(playbook=self.etcHostsPlaybookPath,extraVars=extraVars)
+  #endDef
+  
 #endClass

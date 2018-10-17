@@ -2,7 +2,7 @@
 
 This section describes the limitations of the current release.
 
-- ICP 2.1.0.3 and ICP 3.1.0.0 have been tested.  
+- ICP 2.1.0.3 and ICP 3.1.0 have been tested.  
 
 - ICP 2.1.0.3 Fixpack 1 has been installed but not tested much.  Installing the fixpack takes an additional 30 minutes or so.  It is recommended that the latest ICP supported by the QuickStart be used.
 
@@ -18,4 +18,4 @@ This section describes the limitations of the current release.
 
 - Different EC2 instance types for worker nodes is not currently supported.  At least with a single auto-scaling group for worker nodes, different EC2 instance types is not possible. We could have multiple worker node auto-scaling groups, e.g., auto-scaling groups for T-shirt sizes.  Need to investigate. What happens if the node count for an auto-scaling group is 0?  
 
-- *TBD*
+- When installing ICP 2.1.0.3 the LoadICPImagesLocally should be set to Yes or True. As of ICP 3.1.0 images do not need to be loaded locally to speed the installation.

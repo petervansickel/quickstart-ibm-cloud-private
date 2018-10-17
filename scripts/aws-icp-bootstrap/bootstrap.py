@@ -55,12 +55,16 @@ History:
   01 SEP 2018 - pvs - Added code to wait for the root stack to have a status of CREATE_COMPLETE.
   In testing, hit a case where the bootnode script was getting outputs from the root stack and 
   the outputs were empty.
+  
+  16 OCT 2018 - pvs - Added code to get binary content needed for the ICP installation using 
+  pressigned S3 URL and the Python requests module.
 '''
 
 from Crypto.PublicKey import RSA
 from subprocess import call
 import socket
 import shutil
+import requests
 from os import chmod
 import sys, os.path, time, datetime
 import boto3
@@ -79,6 +83,7 @@ from yapl.exceptions.Exceptions import NotImplementedException
 #from yapl.docker.InstallDocker import InstallDocker
 
 from yapl.icp.AWSConfigureICP import ConfigureICP
+from yapl.icp.AWSConfigureEFS import ConfigureEFS
 from yapl.icp.ConfigurePKI import ConfigurePKI
 from yapl.docker.PrivateRegistry import PrivateRegistry
 
@@ -199,7 +204,7 @@ class Bootstrap(object):
       Constructor
       
       NOTE: Some instance variable initialization happens in self._init() which is 
-      invoked early in main() at some point after _getStackParameters().
+      invoked early in main() at some point after getStackParameters().
       
     """
     object.__init__(self)
@@ -216,10 +221,12 @@ class Bootstrap(object):
     self.asg = boto3.client('autoscaling')
     self.s3  = boto3.client('s3')
     self.ssm = boto3.client('ssm')
+    self.route53 = boto3.client('route53')
     
     self.hosts = { 'master': [], 'worker': [], 'proxy': [], 'management': [], 'va': [], 'etcd': []}
     self.clusterHosts = []
     self.bootHost = None
+    self.rootStackOutputs = {}
         
     # Where the CloudFormation template puts the inception fixpack archive.
     self.inceptionFixpackArchivePath = "/tmp/icp-inception-fixpack.tar"
@@ -257,7 +264,7 @@ class Bootstrap(object):
       
       NOTE: The StackParameters are intended to be read-only.  It's not 
       likely they would be set in the Bootstrap instance once they are 
-      initialized in _getStackParameters().
+      initialized in getStackParameters().
     """
     if (attributeName in StackParameterNames):
       StackParameters[attributeName] = attributeValue
@@ -390,12 +397,10 @@ class Bootstrap(object):
   #endDef
   
   
-  def _getStackParameters(self, stackId):
+  def getStackParameters(self, stackId):
     """
-      Return a dictionary with stack parameter name-value pairs for
-      stack parameters relevant to the ICP Configuration from the  
+      Return a dictionary with stack parameter name-value pairs from the  
       CloudFormation stack with the given stackId.
-      
     """
     result = {}
     
@@ -411,19 +416,13 @@ class Bootstrap(object):
   #endDef
   
   
-  def getCommonName(self):
+  def getClusterCN(self):
     """
-      A common name is needed for the ICP X.509 certificate.  It can be provided explicitly 
-      as a stack parameter: X509CommonName (highest precedence) or ClusterCADomain
-      or it is derived from: ClusterName and ClusterDomain.
+      Return the cluster CN comprised of the ClusterName and VPCDomain. 
+      A common name is needed for the ICP X.509 certificate for the cluster (e.g., the management console.
     """
-    if (self.X509CommonName):
-      CN = self.X509CommonName
-    elif (self.ClusterCADomain):
-      CN = self.ClusterCADomain
-    else:
-      CN = "%s.%s" % (self.ClusterName,self.ClusterDomain)
-    #endIf
+
+    CN = "%s.%s" % (self.ClusterName,self.VPCDomain)
     return CN
   #endDef
   
@@ -438,7 +437,7 @@ class Bootstrap(object):
       The rootStackName is used as part of the SSM parameter key.  All of the cluster 
       nodes expect to see parameters based on the root stack name.
       
-      Invoke _getStackParameters() gets all the CloudFormation stack parameters imported
+      Invoke getStackParameters() gets all the CloudFormation stack parameters imported
       into the StackParmaters dictionary to make them available for use with the Bootstrap 
       instance as instance variables via __getattr__().
       
@@ -450,7 +449,9 @@ class Bootstrap(object):
     methodName = "_init"
     global StackParameters, StackParameterNames
     
-    StackParameters = self._getStackParameters(bootStackId)
+    bootStackParameters = self.getStackParameters(bootStackId)
+    rootStackParameters = self.getStackParameters(rootStackId)
+    StackParameters = self.addParameters(bootStackParameters,rootStackParameters)
     StackParameterNames = StackParameters.keys()
     
     if (TR.isLoggable(Level.FINEST)):
@@ -467,6 +468,12 @@ class Bootstrap(object):
     if (not os.path.isfile(self.configTemplatePath)):
       raise ICPInstallationException("A configuration template file: %s for ICP v%s does not exist in the bootstrap script package." % (self.configTemplatePath,self.ICPVersion))
     #endIf
+    
+    self.etcHostsPlaybookPath = os.path.join(self.home,"playbooks","etc-hosts-add-entry.yaml")
+    if (not os.path.isfile(self.etcHostsPlaybookPath)):
+      raise ICPInstallationException("Playbook: %s, does not exist in the bootstrap script package." % (self.etcHostsPlaybookPath))
+    #endIf
+    
     
     if (not self.ICPArchivePath):
       raise ICPInstallationException("The ICPArchivePath must be provided in the stack parameters.")
@@ -493,7 +500,7 @@ class Bootstrap(object):
 
     self.pkiDirectory = os.path.join(self.icpHome,"cluster","cfc-certs")
     self.pkiFileName = 'icp-router'
-    self.CN = self.getCommonName()
+    self.CN = self.getClusterCN()
 
     # Root stack ID is in position 0 of the stackIds list
     self.stackIds = [ rootStackId ]
@@ -506,7 +513,33 @@ class Bootstrap(object):
     self._getHosts(self.stackIds)
 
     self._getSSMParameterKeys(rootStackName)
+    
+    self.rootStackOutputs = self.getStackOutputs(rootStackId)
         
+  #endDef
+  
+  
+  def addBootNodeSSHKeys(self):
+    """
+      If an ssh_publickeys file exists in the root home directory, then append that file
+      to the ubuntu users authorized_keys file.  This allows additional administrators to 
+      ssh into the boot node.
+    """
+    methodName = "addBootNodeSSHKeys"
+    if (not os.path.exists("/root/ssh_publickeys")):
+      TR.info(methodName,"No additional ssh public keys to include for access to the boot node.")  
+    else:
+      TR.info(methodName,"Adding SSH public keys to permit access to the boot node.")
+      with open("/home/ubuntu/.ssh/authorized_keys", "a+") as authorized_keys, open("/root/ssh_publickeys","r") as ssh_publickeys:
+        for publicKey in ssh_publickeys:
+          publicKey = publicKey.rstrip()
+          if (TR.isLoggable(Level.FINEST)):
+            TR.finest(methodName,"To ubuntu user SSH authorized_keys adding:\n\t%s" % publicKey)
+          #endIf
+          authorized_keys.write("%s\n" % publicKey)
+        #endFor
+      #endWith
+    #endIf
   #endDef
   
   
@@ -530,6 +563,141 @@ class Bootstrap(object):
       TR.warn(methodName,"Unexpected host role: %s for host: %s.  Valid host roles: %s" % (role,host.ip4_address,ICPClusterRoles))
     #endIf
   #endIf
+  
+  def getRootStackOutput(self, outputName):
+    """
+      Return the root stack output with the given outputName
+    """
+    if (not self.rootStackOutputs):
+      self.rootStackOutputs = self.getStackOutputs(self.rootStackId)
+    #endIf
+    
+    return self.rootStackOutputs.get(outputName)
+  #endDef
+  
+  
+  def getProxyELBDNSName(self):
+    """
+      Return the proxy ELB DNS name.
+      
+      The proxy ELB DNS name is the ProxyNodeLoadBalancerName output of the root stack.  
+    """ 
+    name = self.getRootStackOutput('ProxyNodeLoadBalancerName')
+    
+    if (not name):
+      raise AWSStackResourceException("The root stack: %s must have an output with key: ProxyNodeLoadBalancerName" % self.rootStackId)
+    #endIf
+    
+    return name
+  #endDef
+  
+  
+  def addParameters(self,parameters,addedParameters):
+    """
+      Modify the parameters dictionary with any values in the addedParameters dictionary 
+      that are not present in the parameters dictionary.
+    """
+    addedKeys = addedParameters.keys()
+    for key in addedKeys:
+      if (not parameters.get(key)):
+        parameters[key] = addedParameters.get(key)
+      #endIf
+    #endFor
+    return parameters
+  #endDef
+  
+  
+  def getStackOutputs(self, stackId):
+    """
+      Return a dictionary with the stack output name-value pairs from the
+      CloudFormation stack with the given stackId.
+      
+      If the stack has no outputs an empty dictionary is returned.
+    """
+    result = {}
+    stack = self.cfnResource.Stack(stackId)
+    for output in stack.outputs:
+      key = output['OutputKey']
+      value = output['OutputValue']
+      result[key] = value
+    #endFor
+    
+    return result
+  #endDef
+  
+  
+  def getProxyELBHostedZoneId(self):
+    """
+      Return the hosted zone ID for this VPC.
+      
+      The HostedZone is one of the root stack outputs.
+    """
+    
+    hostedZoneId = self.getRootStackOutput('ProxyELBHostedZoneID')
+    
+    if (not hostedZoneId): 
+      raise AWSStackResourceException("The root stack: %s must have an output with key: ProxyELBHostedZone" % self.rootStackId)
+    #endIf
+    
+    return hostedZoneId
+  #endDef
+  
+  
+  def addRoute53Aliases(self, aliases, target, targetHostedZoneId):
+    """
+      For each alias in the aliases list, add an alias entry for the target to Route53 DNS.
+      
+      If aliases is not a Python list, then it is assumed to be a string with comma separated items
+      that represents the list.
+      
+      NOTE: Two hosted zone IDs are needed, one for the cluster and the other for the target.
+    """
+    methodName = "addRoute53Aliases"
+    
+    if (type(aliases) != type([])):
+      aliases = [alias.strip() for alias in aliases.split(',')]
+    #endIf
+    
+    clusterHostedZoneId = self.getRootStackOutput('ClusterHostedZoneId')
+    
+    if (not clusterHostedZoneId):
+      raise AWSStackResourceException("The root stack: %s must have an output with key: ClusterHostedZoneId" % self.rootStackId)
+    #endIf
+    
+    changes = []
+    for alias in aliases:
+      change = {
+                 'Action': 'UPSERT',
+                 'ResourceRecordSet': 
+                  {
+                    'Name': alias,
+                    'Type': 'A',
+                    'AliasTarget': 
+                     {
+                       'HostedZoneId': targetHostedZoneId,
+                       'DNSName': target,
+                       'EvaluateTargetHealth': False
+                     }
+                  }
+               }
+      if (TR.isLoggable(Level.FINE)):
+        TR.fine(methodName,"Adding Route53 alias entry: %s >>>> %s" % (alias,target))
+      #endIf
+      changes.append(change)
+    #endFor
+    
+    changeBatch = {'Comment': 'Create/update %s DNS aliases' % target, 'Changes': changes}
+    response = self.route53.change_resource_record_sets(HostedZoneId=clusterHostedZoneId,ChangeBatch=changeBatch)
+    
+    if (not response):
+      raise ICPInstallationException("Failed to update Route53 resource record(s)")
+    #endIf
+    
+    if (TR.isLoggable(Level.FINE)):
+      changeInfo = response.get('ChangeInfo')
+      TR.fine(methodName, "Route53 DNS change request Id: %s has status: %s" % (changeInfo.get('Id'),changeInfo.get('Status')))
+    #endIf
+  #endDef
   
   
   def _getAutoScalingGroupEC2Instances(self, asgIds):
@@ -786,6 +954,30 @@ class Bootstrap(object):
   #endDef
   
   
+  def _writeGroupOfGroupsToHostsFile(self,group,children,hostsFile):
+    """
+      Helper method for createAnsibleHostsFile()
+      
+      Write a INI style group of groups to an Ansible hosts file.
+      
+      group is the name of the group of groups and it defines a section
+            of the hosts file.
+            
+      children is a list of groups that make up the group of groups,
+               i.e., the child groups
+             
+      hostsFile is an open file descriptor
+    """
+    if (children):
+      hostsFile.write("[%s:children]\n" % group)
+      for child in children:
+        hostsFile.write("%s\n" % child)
+      #endFor
+      hostsFile.write("\n")
+    #endIf
+
+  #endDef 
+  
   def createICPHostsFile(self):
     """
       Create a proper ICP hosts file in the current working directory.
@@ -804,7 +996,11 @@ class Bootstrap(object):
     TR.info(methodName,"COMPLETED creating hosts file for the ICP installation.")
   #endDef
 
-
+  # TBD: At one point I thought I needed a group of groups to run an ansible
+  # playbook to mount EFS volumes for the master and worker nodes.  The master
+  # nodes have scripting that mounts the EFS volumes they need for registry, 
+  # icp audit and k8s audit log.  The worker nodes need a mount and an entry
+  # in /etc/fstab to use the EFS storage provisioner.
   def createAnsibleHostsFile(self):
     """
       Create a hosts file to be used with Ansible playbooks for the cluster.
@@ -813,6 +1009,10 @@ class Bootstrap(object):
       A separate Ansible hosts file is created for use outside of the hosts file
       used by the inception container to allow the boot node to be included in
       playbook targets.
+      
+      A group of groups is created for use as a target for mounting EFS storage.
+      The group of groups is the master nodes and the worker nodes.  All need
+      to mount the EFS storage and have an entry in /etc/fstab.
       
       NOTE: To run a playbook that picks up all nodes in the cluster use "all"
       for the nodes to target.
@@ -828,6 +1028,8 @@ class Bootstrap(object):
         hostsInRole = self.hosts.get(role)
         self._writeGroupToHostsFile(role,hostsInRole,hostsFile)
       #endFor
+      # TBD: I don't think I need this.
+      #self._writeGroupOfGroupsToHostsFile('efs_client', ['master','worker'], hostsFile)
     #endWith
     TR.info(methodName,"COMPLETED configuring /etc/ansible/hosts file.")
   #endDef
@@ -867,6 +1069,11 @@ class Bootstrap(object):
       NOTE: This method is intended to be executed in the finally block of the try-except
       in main() so if an exception occurs here it is caught here and the stack dump is
       emitted to the bootstrap log file.
+      
+      NOTE: The maximum number of keys that can be deleted in one call to delete_parameters()
+      is 10.  Go figure. The number of SSMParameterKeys will be the number of nodes in the 
+      cluster.  In the body of the method the SSMParameterKeys is broken up into a list of
+      lists of length at most 10.
     """
     methodName = "_deleteSSMParameters"
     
@@ -874,10 +1081,14 @@ class Bootstrap(object):
     
     try:
       if (SSMParameterKeys):
-        self.ssm.delete_parameters(Names=SSMParameterKeys)
-        if (TR.isLoggable(Level.FINEST)):
-          TR.finest(methodName,"Post install cleanup. Deleted SSM parameters: %s" % SSMParameterKeys)
-        #endIf
+        # keep within the limit of deleting at most 10 keys at a time
+        parmKeys = [SSMParameterKeys[i:i+10] for i in range(0, len(SSMParameterKeys), 10)]
+        for keys in parmKeys:
+          self.ssm.delete_parameters(Names=keys)
+          if (TR.isLoggable(Level.FINEST)):
+            TR.finest(methodName,"Post install cleanup. Deleted SSM parameters: %s" % keys)
+          #endIf
+        #endFor
       #endIf
     except Exception as e:
       raise ICPInstallationException("Attempting to delete SSM parameter keys: %s\n\tException: %s" % (SSMParameterKeys,e))
@@ -1115,6 +1326,101 @@ class Bootstrap(object):
   #endDef
   
   
+  def getS3Object(self, bucket=None, s3Path=None, destPath=None):
+    """
+      Return destPath which is the local file path provided as the destination of the download.
+      
+      A pre-signed URL is created and used to download the object from the given S3 bucket
+      with the given S3 key (s3Path) to the given local file system destination (destPath).
+      
+      The destination path is assumed to be a full path to the target destination for 
+      the object. 
+      
+      If the directory of the destPath does not exist it is created.
+      It is assumed the objects to be gotten are large binary objects.
+      
+      For details on how to download a large file with the requests package see:
+      https://stackoverflow.com/questions/16694907/how-to-download-large-file-in-python-with-requests-py
+    """
+    methodName = "getS3Object"
+    
+    if (not bucket):
+      raise MissingArgumentException("An S3 bucket name (bucket) must be provided.")
+    #endIf
+    
+    if (not s3Path):
+      raise MissingArgumentException("An S3 object key (s3Path) must be provided.")
+    #endIf
+    
+    if (not destPath):
+      raise MissingArgumentException("A file destination path (destPath) must be provided.")
+    #endIf
+    
+    TR.info(methodName, "STARTED download of object: %s from bucket: %s, to: %s" % (s3Path,bucket,destPath))
+    
+    s3url = self.s3.generate_presigned_url(ClientMethod='get_object',Params={'Bucket': bucket, 'Key': s3Path})
+    if (TR.isLoggable(Level.FINE)):
+      TR.fine(methodName,"Getting S3 object with pre-signed URL: %s" % s3url)
+    #endIf
+    
+    destDir = os.path.dirname(destPath)
+    if (not os.path.exists(destDir)):
+      os.makedirs(destDir)
+      TR.info(methodName,"Created object destination directory: %s" % destDir)
+    #endIf
+    
+    r = requests.get(s3url, stream=True)
+    with open(destPath, 'wb') as destFile:
+      shutil.copyfileobj(r.raw, destFile)
+    #endWith
+
+    TR.info(methodName, "COMPLETED download from bucket: %s, object: %s, to: %s" % (bucket,s3Path,destPath))
+    
+    return destPath
+  #endDef
+  
+  
+  def getInstallImages(self):
+    """
+      Create a presigned URL and use it to download the ICP and Docker images from the S3
+      bucket where the images are stored.
+      
+      CloudFormation input parameters used in this method:
+        ICPArchiveBucketName
+        ICPArchivePath 
+        DockerInstallBinaryPath 
+        
+        Docker binary gets downloaded to: /root/docker/icp-install-docker.bin
+        ICP install image gets downloaded to: /tmp/icp-install-archive.tgz
+        
+      NOTE: If the image files already exist, then nothing is done.  (The image files may be 
+      copied to the desired location in the local file system using a ConfigSet as part of the
+      instantiation of the boot node in the CloudFormation template.  
+      
+      Using a pre-signed URL is needed when the deployer does not have access to the installation
+      image bucket.
+    """
+    methodName = "getInstallImages"
+    
+    icpImagePath = "/tmp/icp-install-archive.tgz"
+    dockerBinaryPath = "/root/docker/icp-install-docker.bin"
+    
+    if (not os.path.isfile(icpImagePath)):
+      TR.info(methodName,"Getting object: %s from bucket: %s using a pre-signed URL." % (self.ICPArchivePath,self.ICPArchiveBucketName))
+      self.getS3Object(bucket=self.ICPArchiveBucketName,s3Path=self.ICPArchivePath,destPath=icpImagePath)
+    else:
+      TR.info(methodName,"ICP installation image already exists: %s" % icpImagePath)
+    #endIf
+    
+    if (not os.path.isfile(dockerBinaryPath)):
+      TR.info(methodName,"Getting object: %s from bucket: %s using a pre-signed URL." % (self.DockerInstallBinaryPath,self.ICPArchiveBucketName))
+      self.getS3Object(bucket=self.ICPArchiveBucketName,s3Path=self.DockerInstallBinaryPath,destPath=dockerBinaryPath)
+    else:
+      TR.info(methodName,"Docker installation binary already exists: %s" % dockerBinaryPath)
+    #endIf
+  #endDef
+  
+  
   def installDocker(self, inventoryPath='/etc/ansible/hosts'):
     """
       Use an instance of the InstallDocker helper class to run an Ansible playbook
@@ -1162,7 +1468,7 @@ class Bootstrap(object):
   
   def installKubectl(self):
     """
-      Copy kubectl out of the kubernetes image to /usr/local/bin
+      Copy kubectl out of the icp-inception image to /usr/local/bin
       Convenient for troubleshooting.  
       
       If the kubernetes image is not available then this method is a no-op.
@@ -1170,19 +1476,22 @@ class Bootstrap(object):
     methodName = "installKubectl"
     
     TR.info(methodName,"STARTED install of kubectl to local host /usr/local/bin.")
-    kubeImage = self._getDockerImage("kubernetes")
+    kubeImage = self._getDockerImage("icp-inception")
     if (not kubeImage):
-      TR.info(methodName,"Kubernetes image is not available in the local docker registry. Kubectl WILL NOT BE INSTALLED.")
+      TR.info(methodName,"An icp-inception image is not available. Kubectl WILL NOT BE INSTALLED.")
     else:
-      TR.info(methodName,"Kubernetes image is available in the local docker registry.  Proceeding with the installation of kubectl.")
-      if (TR.isLoggable(Level.FINEST)):
-        TR.finest(methodName,"Kubernetes image tags: %s" % kubeImage.tags)
-      #endIf
       kubeImageName = kubeImage.tags[0]
+      
+      TR.info(methodName,"An icp-inception image: %s, is available in the local docker registry.  Proceeding with the installation of kubectl." % kubeImageName)
+      if (TR.isLoggable(Level.FINEST)):
+        TR.finest(methodName,"%s image tags: %s" % (kubeImageName,kubeImage.tags))
+      #endIf
+      
       self.dockerClient.containers.run(kubeImageName,
                                        network_mode='host',
-                                       volumes={"/usr/local/bin": {'bind': '/data', 'mode': 'rw'}}, 
-                                       command="cp /kubectl /data"
+                                       volumes={"/usr/local/bin": {'bind': '/data', 'mode': 'rw'}},
+                                       environment=["LICENSE=accept"],
+                                       command="cp /usr/local/bin/kubectl /data"
                                        )
     #endIf
     TR.info(methodName,"COMPLETED install of kubectl to local host /usr/local/bin.")
@@ -1263,13 +1572,45 @@ class Bootstrap(object):
   #endIf
   
   
+  def configureEFS(self):
+    """
+      Configure an EFS volume and configure all worker nodes to be able to use 
+      the EFS storage provisioner.
+    """
+    methodName = "configureEFS"
+    
+    TR.info(methodName,"STARTED configuration of EFS on all worker nodes.")
+    # Configure shared storage for applications to use the EFS provisioner
+    # This commented out code is obsolete.  The boot node is on the public
+    # subnet and cannot access the EFS mount targets on the private subnets.
+    #efsServer = self.EFSDNSName                    # An input to the boot node
+    #mountPoint = self.ApplicationStorageMountPoint # Also a boot node input
+    #efsVolumes = EFSVolume(efsServer,mountPoint)
+    #self.mountEFSVolumes(efsVolumes)
+    
+    # Configure EFS storage on all of the worker nodes.
+    playbookPath = os.path.join(self.home,"playbooks","configure-efs-mount.yaml")
+    varFilePath = os.path.join(self.home,"efs-config-vars.yaml")
+    varTemplatePath = os.path.join(self.home,"playbooks","efs-var-template.yaml")
+    configEFS = ConfigureEFS(stackId=self.bootStackId,
+                             playbookPath=playbookPath,
+                             varFilePath=varFilePath,
+                             varTemplatePath=varTemplatePath)
+    
+    configEFS.configureEFS()
+    TR.info(methodName,"COMPLETED configuration of EFS on all worker nodes.")
+  #endDef
+  
+  
   def createConfigFile(self):
     """
       Create a configuration file from a template and based on stack parameter values.
     """
     methodName="createConfigFile"
     
-    configureICP = ConfigureICP(stackIds=self.stackIds, templatePath=self.configTemplatePath)
+    configureICP = ConfigureICP(stackIds=self.stackIds, 
+                                configTemplatePath=self.configTemplatePath,
+                                etcHostsPlaybookPath=self.etcHostsPlaybookPath)
     
     TR.info(methodName,"STARTED creating config.yaml file.")
     configureICP.createConfigFile(os.path.join(self.home,"config.yaml"),self.ICPVersion)
@@ -1277,15 +1618,6 @@ class Bootstrap(object):
     
   #endDef
   
-  
-  def extractICPInstallArchive(self,targetNodes="all"):
-    """
-      Install ICP using the archive tar ball on each node.
-    """
-    self.runAnsiblePlaybook(playbookPath=os.path.join(self.home, "playbooks", "load-icp-images.yaml"),targetNodes=targetNodes)
-    
-  #endDef
-
   
   def loadICPImages(self,imageArchivePath):
     """
@@ -1618,6 +1950,14 @@ class Bootstrap(object):
       https://docs.aws.amazon.com/efs/latest/ug/wt1-test.html
       Step 3.3 has the mount command template and the options are:
       nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport
+      
+      The following defaults options are also included:
+        rw,suid,dev,exec,auto,nouser
+      
+      WARNING: The boot node is on the public subnet and may not have access to 
+      the EFS mount targets on the private subnets.  The security group may 
+      be configured such that only private subnets can get to the EFS server 
+      mount targets.
     """
     methodName = "mountEFSVolumes"
     
@@ -1630,7 +1970,7 @@ class Bootstrap(object):
     #endIf
 
     # See method doc above for AWS source for mount options used in the loop body below.
-    options = "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport"
+    options = "rw,suid,dev,exec,auto,nouser,nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport"
     
     for volume in volumes:
       if (not os.path.exists(volume.mountPoint)):
@@ -1717,9 +2057,6 @@ class Bootstrap(object):
       # Finish off the initialization of the bootstrap class instance
       self._init(rootStackId,rootStackName,bootStackId)
       
-      # Turn off source/dest check on all cluster members
-      self._disableSourceDestCheck()    
-
       # Using Route53 DNS server rather than /etc/hosts
       # WARNING - Discovered the hard way that the installation overwrites the /etc/hosts file
       # with the cluster IP address and all the other entries are lost.  Happens very late in the install.
@@ -1729,7 +2066,11 @@ class Bootstrap(object):
       self.createICPHostsFile()
       self.createAnsibleHostsFile()
       self.configureSSH()
-      
+      self.addBootNodeSSHKeys()
+ 
+      # Turn off source/dest check on all cluster EC2 instances
+      self._disableSourceDestCheck()    
+     
       # Wait for cluster nodes to be ready for the installation to proceed.
       # Waiting to make sure all cluster nodes have added the boot node
       # SSH public key to their SSH authorized_keys file.
@@ -1737,6 +2078,14 @@ class Bootstrap(object):
       
       self.createSSHKeyScanHostsFile()
       self.sshKeyScan()
+      
+      self.getInstallImages()
+      
+      # Add Route53 DNS aliases for the proxy ELB
+      # TODO: Leave this commented out until we figure out how to delete the entry when the stack is deleted.
+      #self.addRoute53Aliases(self.ApplicationDomains, self.getProxyELBDNSName(), self.getProxyELBHostedZoneId())
+      
+      self.configureEFS()
       
       # set vm.max_map_count on all cluster members
       setMaxMapCountPlaybookPath = os.path.join(self.home,"playbooks", "set-vm-max-mapcount.yaml")
@@ -1751,15 +2100,10 @@ class Bootstrap(object):
 
       self.createConfigFile()
       
-      
-      if (Utilities.toBoolean(self.UsePrivateRegistry)):
-        self.configurePrivateRegistry()
-      else:
-        self.loadICPImages(self.imageArchivePath)
-        self.installKubectl()
-        #self.extractICPInstallArchive(targetNodes="boot")
-      #endIf
-      
+      self.loadICPImages(self.imageArchivePath)
+
+      self.installKubectl()
+
       self.configureInception()
 
       # Wait for notification from all nodes that the local ICP image load has completed.
@@ -1770,12 +2114,6 @@ class Bootstrap(object):
       else:
         self.installICP()        
       #endIf
-
-      # Configure shared storage for applications to use the EFS provisioner
-      efsServer = self.EFSDNSName                    # An input to the boot node
-      mountPoint = self.ApplicationStorageMountPoint # Also a boot node input
-      efsVolumes = EFSVolume(efsServer,mountPoint)
-      self.mountEFSVolumes(efsVolumes)
     
     except ExitException:
       pass # ExitException is used as a "goto" end of program after emitting help info
@@ -1800,11 +2138,13 @@ class Bootstrap(object):
       
       endTime = Utilities.currentTimeMillis()
       elapsedTime = (endTime - beginTime)/1000
+      etm, ets = divmod(elapsedTime,60)
+      eth, etm = divmod(etm,60) 
 
       if (self.rc == 0):
-        TR.info(methodName,"BOOT0103I END Boostrap AWS ICP Quickstart.  Elapsed time (seconds): %d" % (elapsedTime))
+        TR.info(methodName,"BOOT0103I END Boostrap AWS ICP Quickstart.  Elapsed time (hh:mm:ss): %d:%02d:%02d" % (eth,etm,ets))
       else:
-        TR.info(methodName,"BOOT0104I FAILED END Boostrap AWS ICP Quickstart.  Elapsed time (seconds): %d" % (elapsedTime))
+        TR.info(methodName,"BOOT0104I FAILED END Boostrap AWS ICP Quickstart.  Elapsed time (hh:mm:ss): %d:%02d:%02d" % (eth,etm,ets))
       #endIf
       
     #endTry

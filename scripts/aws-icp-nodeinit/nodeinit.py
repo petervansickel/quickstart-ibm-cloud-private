@@ -35,8 +35,10 @@ from subprocess import call
 import boto3
 from botocore.exceptions import ClientError
 import socket
+import shutil
 import time
 import docker
+import requests
 from yapl.utilities.Trace import Trace, Level
 import yapl.utilities.Utilities as Utilities
 from yapl.exceptions.Exceptions import ExitException
@@ -485,6 +487,91 @@ class NodeInit(object):
     
     return authorizedKeyEntry
   #endDef
+ 
+ 
+  def getS3Object(self, bucket=None, s3Path=None, destPath=None):
+    """
+      Return destPath which is the local file path provided as the destination of the download.
+      
+      A pre-signed URL is created and used to download the object from the given S3 bucket
+      with the given S3 key (s3Path) to the given local file system destination (destPath).
+      
+      The destination path is assumed to be a full path to the target destination for 
+      the object. 
+      
+      If the directory of the destPath does not exist it is created.
+      It is assumed the objects to be gotten are large binary objects.
+      
+      For details on how to download a large file with the requests package see:
+      https://stackoverflow.com/questions/16694907/how-to-download-large-file-in-python-with-requests-py
+    """
+    methodName = "getS3Object"
+    
+    if (not bucket):
+      raise MissingArgumentException("An S3 bucket name (bucket) must be provided.")
+    #endIf
+    
+    if (not s3Path):
+      raise MissingArgumentException("An S3 object key (s3Path) must be provided.")
+    #endIf
+    
+    if (not destPath):
+      raise MissingArgumentException("A file destination path (destPath) must be provided.")
+    #endIf
+    
+    TR.info(methodName, "STARTED download of object: %s from bucket: %s, to: %s" % (s3Path,bucket,destPath))
+    
+    s3url = self.s3.generate_presigned_url(ClientMethod='get_object',Params={'Bucket': bucket, 'Key': s3Path})
+    if (TR.isLoggable(Level.FINE)):
+      TR.fine(methodName,"Getting S3 object with pre-signed URL: %s" % s3url)
+    #endIf
+    
+    destDir = os.path.dirname(destPath)
+    if (not os.path.exists(destDir)):
+      os.makedirs(destDir)
+      TR.info(methodName,"Created object destination directory: %s" % destDir)
+    #endIf
+    
+    r = requests.get(s3url, stream=True)
+    with open(destPath, 'wb') as destFile:
+      shutil.copyfileobj(r.raw, destFile)
+    #endWith
+
+    TR.info(methodName, "COMPLETED download from bucket: %s, object: %s, to: %s" % (bucket,s3Path,destPath))
+    
+    return destPath
+  #endDef
+  
+ 
+  def getInstallImages(self):
+    """
+      Create a presigned URL and use it to download the Docker image from the S3
+      bucket where the install images are stored.
+      
+      CloudFormation input parameters used in this method:
+        ICPArchiveBucketName
+        DockerInstallBinaryPath 
+        
+        Docker binary gets downloaded to: /root/docker/icp-install-docker.bin
+        
+      NOTE: If the image files already exist, then nothing is done.  (The image files may be 
+      copied to the desired location in the local file system using a ConfigSet as part of the
+      instantiation of the boot node in the CloudFormation template.  
+      
+      Using a pre-signed URL is needed when the deployer does not have direct permission to 
+      access to the installation image bucket.
+    """
+    methodName = "getInstallImages"
+    
+    dockerBinaryPath = "/root/docker/icp-install-docker.bin"
+    
+    if (not os.path.isfile(dockerBinaryPath)):
+      TR.info(methodName,"Getting object: %s from bucket: %s using a pre-signed URL." % (self.DockerInstallBinaryPath,self.ICPArchiveBucketName))
+      self.getS3Object(bucket=self.ICPArchiveBucketName,s3Path=self.DockerInstallBinaryPath,destPath=dockerBinaryPath)
+    else:
+      TR.info(methodName,"Docker installation binary already exists: %s" % dockerBinaryPath)
+    #endIf
+  #endDef
   
   
   def _getDockerImage(self,rootName):
@@ -522,7 +609,7 @@ class NodeInit(object):
     TR.info(methodName,"STARTED install of kubectl to local host /usr/local/bin.")
     kubeImage = self._getDockerImage("kubernetes")
     if (not kubeImage):
-      TR.info(methodName,"Kubernetes image is not available in the local docker registry. Kubectl WILL NOT BE INSTALLED.")
+      TR.info(methodName,"Kubernetes image is not available in the local docker registry. Kubectl can not be installed.")
     else:
       TR.info(methodName,"Kubernetes image is available in the local docker registry.  Proceeding with the installation of kubectl.")
       if (TR.isLoggable(Level.FINEST)):
@@ -627,6 +714,9 @@ class NodeInit(object):
       https://docs.aws.amazon.com/efs/latest/ug/wt1-test.html
       Step 3.3 has the mount command template and the options are:
       nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport
+      
+      We explicitly add the following default mount options:
+      rw,suid,dev,exec,auto,nouser
     """
     methodName = "mountEFSVolumes"
     
@@ -639,7 +729,7 @@ class NodeInit(object):
     #endIf
 
     # See method doc above for AWS source for mount options used in the loop body below.
-    options = "nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport"
+    options = "rw,suid,dev,exec,auto,nouser,nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport"
     
     for volume in volumes:
       if (not os.path.exists(volume.mountPoint)):
@@ -758,14 +848,16 @@ class NodeInit(object):
       
       # Additional initialization of the instance.
       self._init(stackId)
-      
+
+      self.getInstallImages()
+          
       # The sleep() is a hack to give bootnode time to do get its act together.
       # PVS: I've run into rare cases where it appears that the the cluster nodes
       # pick up a bad public key.  I think it may be due to accidentally reusing
       # an ssm parameter.  Don't have time to troubleshoot, now.  I'm thinking 
       # if the boot node gets to it first, it will overwrite anything old that 
       # may be there.
-      time.sleep(60)
+      time.sleep(30)
       
       authorizedKeyEntry = self.getBootNodePublicKey()
       self.addAuthorizedKey(authorizedKeyEntry)
@@ -783,11 +875,7 @@ class NodeInit(object):
       # Wait until boot node completes the Docker installation
       self.getSSMParameterValue("/%s/docker-installation" % self.stackName,expectedValue="COMPLETED")
       
-      if (Utilities.toBoolean(self.LoadICPImagesLocally)):
-        # Expediency for the ICP installation to have each node load the installation images.
-        self.loadICPImages()
-        self.installKubectl()
-      #endIf
+      # NOTE: It looks like kubectl gets installed on the master node as part of the ICP install, at least as of ICP 3.1.0.
       
       self.publishReadiness(self.stackName,self.fqdn)
           
@@ -810,11 +898,13 @@ class NodeInit(object):
 
       endTime = Utilities.currentTimeMillis()
       elapsedTime = (endTime - beginTime)/1000
+      etm, ets = divmod(elapsedTime,60)
+      eth, etm = divmod(etm,60) 
       
       if (self.rc == 0):
-        TR.info(methodName,"NINIT0103I END Node initialization AWS ICP Quickstart.  Elapsed time (seconds): %d" % (elapsedTime))
+        TR.info(methodName,"NINIT0103I END Node initialization AWS ICP Quickstart.  Elapsed time (hh:mm:ss): %d:%02d:%02d" % (eth,etm,ets))
       else:
-        TR.info(methodName,"NINIT0104I FAILED END Node initialization AWS ICP Quickstart.  Elapsed time (seconds): %d" % (elapsedTime))
+        TR.info(methodName,"NINIT0104I FAILED END Node initialization AWS ICP Quickstart.  Elapsed time (hh:mm:ss): %d:%02d:%02d" % (eth,etm,ets))
       #endIf
       
     #endTry

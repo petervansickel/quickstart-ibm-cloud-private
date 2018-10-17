@@ -1,0 +1,126 @@
+[
+  {
+    "ParameterKey": "AvailabilityZoneCount",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "AvailabilityZones",
+    "ParameterValue": "us-west-1b"
+  },
+  {
+    "ParameterKey": "ApplicationDomains",
+    "ParameterValue": "myapps.example.com"
+  },
+  {
+    "ParameterKey": "BootNodeInstanceType",
+    "ParameterValue": "m5.xlarge"
+  },
+  {
+    "ParameterKey": "CFNTemplateVersion",
+    "ParameterValue": "0.9.3"
+  },
+  {
+    "ParameterKey": "CustomArtifactsPath",
+    "ParameterValue": "custom/aws.zip"
+  },
+  {
+    "ParameterKey": "DockerInstallBinaryPath",
+    "ParameterValue": "icp-docker-18.03.1_x86_64.bin"
+  },
+  {
+    "ParameterKey": "ExternalSSHLocation",
+    "ParameterValue": "108.39.252.97/32"
+  },
+  {
+    "ParameterKey": "ICPArchiveBucketName",
+    "ParameterValue": "icp-3-1-0-us-west-1"
+  },
+  {
+    "ParameterKey": "ICPArchivePath",
+    "ParameterValue": "ibm-cloud-private-x86_64-3.1.0.tar.gz"
+  },
+  {
+    "ParameterKey": "ICPBootNodeScriptPackagePath",
+    "ParameterValue": "scripts/aws-icp-bootstrap-v0.0.1.zip"
+  },
+  {
+    "ParameterKey": "ICPClusterNodeScriptPackagePath",
+    "ParameterValue": "scripts/aws-icp-nodeinit-v0.0.1.zip"
+  },
+  {
+    "ParameterKey": "ICPDeploymentLogsBucketName",
+    "ParameterValue": "aws-icp-quickstart-logs-us-west-1"
+  },
+  {
+    "ParameterKey": "ICPScriptBucketName",
+    "ParameterValue": "aws-icp-quickstart-us-west-1"
+  },
+  {
+    "ParameterKey": "ICPVersion",
+    "ParameterValue": "3.1.0"
+  },
+  {
+    "ParameterKey": "InceptionImageName",
+    "ParameterValue": "ibmcom/icp-inception-amd64:3.1.0-ee"
+  },
+  {
+    "ParameterKey": "InceptionInstallCommandString",
+    "ParameterValue": "install -v"
+  },
+  {
+    "ParameterKey": "KeyFilePath",
+    "ParameterValue": "keys/additional-keys"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": "pvs_key_us_west_1"
+  },
+  {
+    "ParameterKey": "ManagementNodeCount",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "ManagementNodeInstanceType",
+    "ParameterValue": "m5.2xlarge"
+  },
+  {
+    "ParameterKey": "MasterNodeCount",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "MasterNodeInstanceType",
+    "ParameterValue": "m5.2xlarge"
+  },
+  {
+    "ParameterKey": "PrivateSubnets",
+    "ParameterValue": "10.10.10.0/24"
+  },
+  {
+    "ParameterKey": "ProxyNodeCount",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "ProxyNodeInstanceType",
+    "ParameterValue": "m5.xlarge"
+  },
+  {
+    "ParameterKey": "PublicSubnets",
+    "ParameterValue": "10.10.20.0/24"
+  },
+  {
+    "ParameterKey": "ResourceOwner",
+    "ParameterValue": "Peter.VanSickel"
+  },
+  {
+    "ParameterKey": "VPCName",
+    "ParameterValue": "ICP310-VPC"
+  },
+  {
+    "ParameterKey": "WorkerNodeCount",
+    "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "WorkerNodeInstanceType",
+    "ParameterValue": "m5.xlarge"
+  }
+]

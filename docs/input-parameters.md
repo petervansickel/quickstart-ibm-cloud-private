@@ -1,13 +1,13 @@
 # ICP installation parameters
 
-The installation parameters in alphabetical order are described below.
+The installation parameters in alphabetical order are described below.  The "source of truth" for all instance parameters is the root template.  
 
 - BootNodeInstanceType:
   - The EC2 instance type to use for the boot node.  The boot node is dedicated to the orchestration of the ICP deployment.
   - Default: `m5d.xlarge`
 
 - ClusterCADomain
-  - The fully qualified domain name (host name) to use for the `cluster_CA_domain` attribute in the `config.yaml` ICP configuration file.  For a production deployment this parameter should be provided.
+  - The fully qualified domain name (host name) to use for the `cluster_CA_domain` attribute in the `config.yaml` ICP configuration file.  For a production deployment this parameter should be provided.  It must be the name used in the CN attribute of the PKI certificates used by the cluster for administrative access to the cluster.
   - Default: The cluster name concatenated with `.icp`, for example, using the default cluster name: `mycluster.icp`
 
 - ClusterCIDR (**required**)

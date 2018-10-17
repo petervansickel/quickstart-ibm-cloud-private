@@ -1,0 +1,598 @@
+###############################################################################
+# Licensed Material - Property of IBM
+# 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
+# US Government Users Restricted Rights - Use, duplication or disclosure
+# restricted by GSA ADP Schedule Contract with IBM Corp.
+#
+# DISCLAIMER:
+# The following source code is sample code created by IBM Corporation.
+# This sample code is provided to you solely for the purpose of assisting you
+# in the  use of  the product. The code is provided 'AS IS', without warranty or
+# condition of any kind. IBM shall not be liable for any damages arising out of
+# your use of the sample code, even if IBM has been advised of the possibility
+# of such damages.
+###############################################################################
+#
+# NOTES:
+#  Each ICP node has an ICPRole tag that is used by the bootstrapping
+#  scripts to determine the role of the node.  The following values
+#  for the ICPRole tag and accepted (case insensitive):
+#    Master, Worker, Proxy, Management, VA, etcd
+#
+---
+AWSTemplateFormatVersion: 2010-09-09
+Description: >-
+  This template deploys an ICP Boot node for orchestrating the deployment of
+  an IBM Cloud Private stack.
+  **WARNING** This template creates EC2 instances and related resources. You
+  will be billed for the AWS resources used if you create a stack from this
+  template.
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: General Deployment Parameters
+        Parameters:
+          - ResourceOwner
+          - KeyFilePath
+          - KeyName
+
+      - Label:
+          default: Deployment Control Parameters
+        Parameters:
+          - InstallICPFixpack
+
+      - Label:
+          default: IBM Cloud Private Configuration Parameters
+        Parameters:
+          - ClusterName
+          - ClusterDomain
+          - ClusterCADomain
+          - ClusterCIDR
+          - ServiceCIDR
+
+      - Label:
+          default: Deployment Artifact Bucket Parameters
+        Parameters:
+          - DockerInstallBinaryPath
+          - CustomArtifactsPath
+          - ICPArchiveBucketName
+          - ICPArchivePath
+          - ICPBootNodeScriptPackagePath
+          - ICPDeploymentLogsBucketName
+          - ICPScriptBucketName
+          - S3ICPFixpackExecutablePath
+          - S3ICPInceptionFixpackPath
+
+      - Label:
+          default: Installation Parameters
+        Parameters:
+          - InceptionImageName
+          - InceptionInstallCommandString
+          - FixpackInceptionImageName
+          - FixpackInstallCommandString
+          - FixpackFileName
+
+      - Label:
+          default: EC2 Instance Parameters
+        Parameters:
+          - BootNodeInstanceType
+
+      - Label:
+          default: Network Parameters
+        Parameters:
+          - ExternalSSHLocation
+
+    ParameterLabels:
+      # Some attempt has been made to keep this list in aphabetical order
+      BootNodeInstanceType:
+        default: Boot Node EC2 Instance Type
+      ClusterCADomain:
+        default: Cluster CA Domain
+      ClusterCIDR:
+        default: ICP Cluster Network CIDR
+      ClusterDomain:
+        default: Cluster Domain
+      ClusterName:
+        default: Cluster Name
+      CustomArtifactsPath:
+        default: Custom Script Package Path
+      DockerInstallBinaryPath:
+        default: Docker Install Binary Path
+      ExternalSSHLocation:
+        default: External SSH Location
+      FixpackIntallCommandString:
+        default: Fixpack Install Command String
+      FixpackFileName:
+        default: Fixpack File Name
+      ICPArchiveBucketName:
+        default: ICP Archive Bucket Name
+      ICPArchivePath:
+        default: ICP Archive Path
+      ICPDeploymentLogsBucketName:
+        default: ICP Deployment Logs Bucket Name
+      InstallICPFixpack:
+        default: Install ICP Fixpack
+      ICPScriptBucketName:
+        default: ICP Script Bucket Name
+      ICPBootNodeScriptPackagePath:
+        default: ICP Boot Node Script Package Path
+      KeyFilePath:
+        default: Key File Path
+      KeyName:
+        default: EC2 Key Pair Name
+      ResourceOwner:
+        default: Resource Owner
+      RootStackId:
+        default: Root Stack Resource ID
+      RootStackName:
+        default: Root Stack Name
+      S3ICPFixpackExecutablePath:
+        default: ICP Fixpack Executable Path
+      S3ICPInceptionFixpackPath:
+        default: ICP Inception Fixpack Path
+      ServiceCIDR:
+        default: ICP Service Network CIDR
+
+Parameters:
+  # Variables are declared in alphabetical order.
+  ApplicationStorageMountPoint:
+    Description: >-
+      Mount point for the EFS volume to be used for application shared storage.  The Kubernetes EFS provisioner uses this mount point. Used by the bootstrap script.
+    Type: String
+
+  # AvailabilityZones is declared to be of type String in order to be passed as
+  # an argument to the Split intrinsic function.  Split will not accept types
+  # other than String as its second argument.
+  AvailabilityZones:
+    Description: >-
+      List of Availability Zones to use for the subnets in the VPC. The list is in the form of a comma delimited list.
+    Type: String
+
+  BootNodeInstanceType:
+    Description: ICP boot node AWS EC2 instance type passed in from parent stack.
+    Type: String
+    Default: m5.xlarge
+
+  BootNodeProfile:
+    Description: >-
+      The resource ID of the BootNodeProfile passed in from the root template.
+    Type: String
+
+  BootNodeRole:
+    Description: >-
+      The resource ID of the BootNodeRole imported from the root template.
+    Type: String
+
+  ClusterCADomain:
+    Description: >-
+      The Certificate Authority (CA) domain used for the CN in the CA key.  The default is to
+      use the cluster name concatenated with the cluster domain.
+    Type: String
+    Default: mycluster.icp
+
+  ClusterCIDR:
+    Description: >-
+      The CIDR for the ICP cluster overlay network.  This gets assigned to the network_cidr attribute in config.yaml.  The value provided must be a network that does not conflict with the AWS VPC network.  It also must not conflict with the ICP service overlay network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 172.16.0.0/20
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  ClusterDomain:
+    Description: >-
+      The network domain of the cluster.
+    Type: String
+
+  ClusterName:
+    Description: >-
+      The name of the cluster.
+    Type: String
+
+  CustomArtifactsPath:
+    Description: >-
+      Path to a zip archive in the ICP script bucket (ICPScriptBucketName) for an archive of additional artifacts, typically scripts, for ICP cluster administration extracted on the boot node in the root home directory.
+    Type: String
+
+  DockerInstallBinaryPath:
+    Description: >-
+      The path to the Docker install binary in the ICP bucket.
+    Type: String
+
+  EFSDNSName:
+    Description: >-
+      The EFS server public DNS name providing shared storage used for application shared storage.  The boot node configures a volume and mounts it at the ApplicationStorageMountPoint. Used by the boostrap script.
+    Type: String
+
+  ExternalSSHSecurityGroup:
+    Description: >-
+      The ExternalSSHSecurityGroup resource ID from the parent template.
+    Type: String
+
+  FixpackInceptionImageName:
+    Description: >-
+      The name of the inception image used for the ICP installation when the ICP fixpack is to be installed.
+    Type: String
+    Default: "ibmcom/icp-inception:2.1.0.3-ee-fp1"
+
+  FixpackInstallCommandString:
+    Description: >-
+      The command string to use when invoking the ICP fixpack installation.
+    Type: String
+    Default: "install -v"
+
+  FixpackFileName:
+    Description: >-
+      The name of the fixpack file, e.g., ibm-cloud-private-2.1.0.3-fp1.sh.
+    Type: String
+    Default: ''
+
+  ICPArchiveBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP install archive and Docker install binary is located.
+    Type: String
+
+  ICPArchivePath:
+    Description: >-
+      The path to the ICP install archive in the ICP bucket.
+    Type: String
+
+  ICPBootNodeScriptPackagePath:
+    Description: >-
+      The path in the ICP bootstrap S3 bucket to the ICP Boot node script package (zip) file.
+    Type: String
+
+  ClusterDomain:
+    Description: >-
+      The network domain of the cluster.
+    Type: String
+    Default: icp
+
+  ClusterName:
+    Description: >-
+      The name of the cluster.
+    Type: String
+    Default: mycluster
+
+  ICPArchivePath:
+    Description: >-
+      The path to the ICP install archive in the ICP bucket provide by the parent stack. Used in the bootstrap script.
+    Type: String
+
+  ICPDeploymentLogsBucketName:
+    Description: >-
+      The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
+    Type: String
+
+  ICPScriptBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP boostrap script packages are located.
+    Type: String
+
+  ICPVersion:
+    Description: >-
+      The version of ICP to be deployed. Provided by the parent stack.  Used in the bootstrap script.
+    Type: String
+
+  InceptionImageName:
+    Description: >-
+      The name of the inception image to use for the ICP installation.
+    Type: String
+
+  InceptionInstallCommandString:
+    Description: >-
+      The command string to use when invoking the ICP installation.
+    Type: String
+
+  InstallFromConfigSet:
+    Description: >-
+      Variable used to determine when the installation images get copied to the ICP boot node.  If 'Yes', then the installation images are copied at the time the ICP boot node is instantiated using the BaseInstall config set defined in the instance.  If 'No', then the installation images are copied to the boot node using a pre-signed S3 URL as part of the bootstrap script.
+    Type: String
+
+  InstallICPFixpack:
+    Description: >-
+      Indicate yes to install an ICP fixpack.  Indicate no if there is no fixpack to install or the fixpack installation is to be skipped.
+    Type: String
+    AllowedValues:
+      - Yes
+      - No
+
+  InternalSSHSecurityGroup:
+    Description: >-
+      The InternalSSHSecurityGroup resource ID from the parent template.
+    Type: String
+
+  InceptionTimeout:
+    Description: >-
+      The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  Provided by the parent stack.  Used in the bootstrap script.
+    Type: Number
+
+  KeyFilePath:
+    Description: >-
+      Path to a file in the ICP script bucket (ICPScriptBuckeName) with public keys for administrators who need SSH access to the boot node.
+    Type: String
+
+  KeyName:
+    Description: >-
+      Name of an existing EC2 KeyPair to enable SSH access to the instance
+    Type: AWS::EC2::KeyPair::KeyName
+    ConstraintDescription: Must be the name of an existing EC2 KeyPair.
+
+  PublicSubnetIds:
+    Description: >-
+      A comma delimted list of public subnet resource IDs passed in from the parent stack.
+    Type: String
+
+  ResourceOwner:
+    Description: >-
+      Value for the owner tag for the deployed resource associated with the stack.
+    Type: String
+
+  RootStackId:
+    Description: >-
+      The AWS resource ID for the root stack.
+    Type: String
+
+  RootStackName:
+    Description: >-
+      The name of the root stack.
+    Type: String
+
+  S3ICPFixpackExecutablePath:
+    Description: >-
+      The S3 path to the latest ICP fixpack executable (.sh) file.
+    Type: String
+
+  S3ICPInceptionFixpackPath:
+    Description: >-
+      The S3 path to the latest ICP inception fixpack archive (.tar) file.
+    Type: String
+
+  ServiceCIDR:
+    Description: >-
+      The CIDR for the ICP service overlay network.  This gets assigned to the service_cluster_ip_range attribute in config.yaml.  The value provided must be a network that does not conflict with the AWS VPC network.  It also must not conflict with the ICP cluster overlay network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    Default: 172.16.16.0/24
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+
+Mappings:
+  # See https://cloud-images.ubuntu.com/locator/ec2/
+  # Builds needed that support HVM, Elastic Network Adapter (ENA)
+  # in order to use the MD5 instance types.
+  # TODO - Update EU an AP
+  AWSRegionAMIEC2:
+    us-east-1:
+      Ubuntu16: ami-ef151d90
+    us-east-2:
+      Ubuntu16: ami-dad5efbf
+    us-west-1:
+      Ubuntu16: ami-d8b05cbb
+    us-west-2:
+      Ubuntu16: ami-1cc69e64
+    eu-west-1:
+      Ubuntu16: ami-844e0bf7
+    eu-central-1:
+      Ubuntu16: ami-a9a557c6
+    ap-northeast-1:
+      Ubuntu16: ami-d82efcb9
+    ap-southeast-1:
+      Ubuntu16: ami-d554f1b6
+    ap-southeast-2:
+      Ubuntu16: ami-0bc1f168
+
+Resources:
+
+  ICPBootNode:
+    Type: AWS::EC2::Instance
+    Metadata:
+      AWS::CloudFormation::Authentication:
+        S3AccessCreds:
+          type: S3
+          roleName: !Ref BootNodeRole
+          buckets:
+            - !Ref ICPArchiveBucketName
+            - !Ref ICPScriptBucketName
+
+      AWS::CloudFormation::Init:
+        configSets:
+          # Configsets are executed by cfn-init synchronously.
+          # The ICP installation 10 GB tar ball gets downloaded from S3
+          # in ~3 minutes. Awesome!
+          # bootstrap.sh does not execute until the config sets complete.
+          Required:
+            - InstallPackages
+            - StackPropertiesFile
+            - ICPBootstrapScripts
+          BaseInstall:
+            - ICPInstallBinaries
+          FixPack:
+            - ICPFixpackBinaries
+          Custom:
+            - CustomArtifacts
+          KeyFile:
+            - KeyFile
+
+        InstallPackages:
+          packages:
+            apt:
+              sysstat: []
+              awscli: []
+              ansible: []
+              nfs-common: []
+              socat: []
+              inetutils-traceroute: []
+            python:
+              pycryptodome: []
+              boto3: []
+              requests: []
+
+        ICPInstallBinaries:
+          files:
+            /root/docker/icp-install-docker.bin:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3.amazonaws.com/${InstallExecutable}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
+              mode: '000554'
+              owner: root
+              group: root
+            /tmp/icp-install-archive.tgz:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3.amazonaws.com/${ArchivePath}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref ICPArchivePath }
+              mode: '000664'
+              owner: root
+              group: root
+
+        ICPFixpackBinaries:
+          files:
+            /tmp/icp-fixpack.sh:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3.amazonaws.com/${FixpackExecutable}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, FixpackExecutable: !Ref S3ICPFixpackExecutablePath }
+              mode: '000554'
+              owner: root
+              group: root
+
+            /tmp/icp-inception-fixpack.tar:
+              source: !Sub
+                - https://${ArchiveBucketName}.s3.amazonaws.com/${ArchivePath}
+                - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref S3ICPInceptionFixpackPath }
+              mode: '000664'
+              owner: root
+              group: root
+
+        ICPBootstrapScripts:
+          sources:
+            /root: !Sub
+             - https://${ScriptBucketName}.s3.amazonaws.com/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPBootNodeScriptPackagePath }
+
+        CustomArtifacts:
+          sources:
+            /root: !Sub
+              - https://${ScriptBucketName}.s3.amazonaws.com/${ArtifactsPath}
+              - { ScriptBucketName: !Ref ICPScriptBucketName, ArtifactsPath: !Ref CustomArtifactsPath }
+
+        KeyFile:
+          files:
+            /root/ssh_publickeys:
+              source: !Sub
+                - https://${ScriptBucketName}.s3.amazonaws.com/${KeyFilePath}
+                - { ScriptBucketName: !Ref ICPScriptBucketName, KeyFilePath: !Ref KeyFilePath }
+              mode: '000554'
+              owner: root
+              group: root
+
+        StackPropertiesFile:
+          # The boot node needs both root stackId to get
+          # the output that holds all the other stack Ids
+          # It needs its own stackId to pick up its input
+          # parameters.
+          files:
+            /root/mystack.props:
+              content: !Sub |
+                REGION=${AWS::Region}
+                STACK_NAME=${RootStackName}
+                ROOT_STACK_ID="${RootStackId}"
+                STACK_ID="${AWS::StackId}"
+                ROLE=boot
+
+            /root/.aws/config:
+              content: !Sub |
+                [default]
+                region=${AWS::Region}
+
+    Properties:
+      AvailabilityZone: !Select [0, !Split [',', !Ref AvailabilityZones]]
+      InstanceType: !Ref BootNodeInstanceType
+      IamInstanceProfile: !Ref BootNodeProfile
+      KeyName: !Ref KeyName
+      ImageId: !FindInMap
+          - AWSRegionAMIEC2
+          - !Ref AWS::Region
+          - Ubuntu16
+
+      NetworkInterfaces:
+        - Description: Primary boot node network interface
+          GroupSet:
+            - !Ref ExternalSSHSecurityGroup
+          AssociatePublicIpAddress: true
+          DeviceIndex: "0"
+          DeleteOnTermination: true
+          SubnetId: !Select [0, !Split [',', !Ref PublicSubnetIds]]
+
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 300
+            Iops: 8000
+
+      UserData:
+        Fn::Base64:
+          !Sub |
+            #!/bin/bash -xe
+            apt update -y
+            # Steps to get to the latest ansible
+            apt upgrade -y
+            apt install -y software-properties-common
+            apt-add-repository -y ppa:ansible/ansible
+            apt update -y
+            apt install -y ansible
+            # Intall pip, then use pip to install the aws cfn helpers
+            apt install -y python-pip
+            # Upgrading pip leads to an error. Don't do, pip install --upgrade pip
+            pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
+            # Install the files and packages from the metadata
+            /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ICPBootNode --configsets Required --region ${AWS::Region}
+            # Conditionally get the base install image tar ball and docker binary
+            if [ "${InstallFromConfigSet}" = "Yes" ]; then
+              /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ICPBootNode --configsets BaseInstall --region ${AWS::Region}
+            fi
+            # Conditionally get the the fixpack images tar ball
+            if [ "${InstallICPFixpack}" = "Yes" ]; then
+              /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ICPBootNode --configsets Fixpack --region ${AWS::Region}
+            fi
+            # Conditionally load the custom archive
+            if [ "${CustomArtifactsPath}" != "" ]; then
+              /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ICPBootNode --configsets Custom --region ${AWS::Region}
+            fi
+            # Conditionally load file with additional public keys for ssh access to the boot node
+            if [ "${KeyFilePath}" != "" ]; then
+              /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ICPBootNode --configsets KeyFile --region ${AWS::Region}
+            fi
+            # Use pip here rather than using python packages
+            # Python packages seems very limited in what it can install.
+            pip install pyopenssl
+            pip install docker
+            chmod +x /root/*.sh
+            chmod +x /root/*.py
+            cd /root
+            /root/bootstrap.sh --os ubuntu
+
+      Tags:
+        - Key: Name
+          Value: ICPBootNode
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: ICPRole
+          Value: Boot
+        - Key: !Sub kubernetes.io/cluster/${RootStackName}
+          Value: ${RootStackName}
+
+Outputs:
+  StackId:
+    Description: >-
+      The Boot node stack resource ID.  Needed for introspection of the boot node stack to pull out the EC2 instance information for the boot node.
+    Value: !Ref AWS::StackId
