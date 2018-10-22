@@ -847,11 +847,14 @@ Resources:
         BootNodeProfile: !GetAtt IAMResources.Outputs.BootNodeProfile
         BootNodeRole: !GetAtt IAMResources.Outputs.BootNodeRole
         ClusterCADomain: !Ref ClusterCADomain
+        ClusterCIDR: !Ref ClusterCIDR
+        ClusterDNSName: !Join ['.', [!Ref ClusterName, !Ref VPCDomain]]
         ClusterDomain: !Ref ClusterDomain
         ClusterName: !Ref ClusterName
         CustomArtifactsPath: !Ref CustomArtifactsPath
         DockerInstallBinaryPath: !Ref DockerInstallBinaryPath
         EFSDNSName: !GetAtt ClusterSharedStorage.Outputs.EFSDNSName
+        EFSFileSystemId: !GetAtt ClusterSharedStorage.Outputs.EFSFileSystemId
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         FixpackFileName: !Ref FixpackFileName
         FixpackInceptionImageName: !Ref FixpackInceptionImageName
@@ -1015,7 +1018,7 @@ Outputs:
   EFSFileSystemId:
     Description: >-
       EFS file system ID to be used to configure the Kubernetes EFS provisioner.
-    Value: !GetAtt ClusterSharedStorage.Outputs.ClusterSharedStorage
+    Value: !GetAtt ClusterSharedStorage.Outputs.EFSFileSystemId
 
   EFSAppSharedStorageMountPoint:
     Description: >-

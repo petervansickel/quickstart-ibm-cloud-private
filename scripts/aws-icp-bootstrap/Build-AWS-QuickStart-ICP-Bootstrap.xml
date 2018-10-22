@@ -87,7 +87,7 @@
 		<delete file="${StagingAreaHome}/${ScriptPackageArchive}" />
 
 		<zip destfile="${StagingAreaHome}/${ScriptPackageArchive}" duplicate="preserve">
-			<fileset dir="${StagingArea}" includes="**/*.*" />
+			<fileset dir="${StagingArea}" includes="**/*" />
 		</zip>
 
     <delete dir="${StagingArea}" />

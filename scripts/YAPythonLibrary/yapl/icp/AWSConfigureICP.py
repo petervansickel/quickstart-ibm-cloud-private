@@ -1043,9 +1043,13 @@ class ConfigureICP(object):
   def configureEtcHosts(self):
     """
       Add an entry to /etc/hosts for all cluster nodes, mapping cluster name to to the master ELB public IP address.
+      
+      The boot node needs an entry in its /etc/hosts that maps a master node ELB address to the cluster name.
+      
+      NOTE: The cluster CN is the cluster FQDN.
     """
     
-    extraVars = ["target_nodes=icp", "host_address=%s" % self.masterELBAddress, "host_name=%s" % self.getClusterCN()]
+    extraVars = ["target_nodes=all", "host_address=%s" % self.masterELBAddress, "host_name=%s" % self.getClusterCN()]
     self.runAnsiblePlaybook(playbook=self.etcHostsPlaybookPath,extraVars=extraVars)
   #endDef
   

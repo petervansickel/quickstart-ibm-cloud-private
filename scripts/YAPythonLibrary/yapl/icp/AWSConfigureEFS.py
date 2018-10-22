@@ -17,6 +17,7 @@ Created on Oct 8, 2018
 @author: Peter Van Sickel pvs@us.ibm.com
 """
 
+import os
 from subprocess import call
 import boto3
 from yapl.utilities.Trace import Trace, Level
@@ -33,26 +34,56 @@ TR = Trace(__name__)
 StackParameters = {}
 StackParameterNames = []
 
-TemplateKeywordMappings = { 
-                            'TargetNodes':  'TARGET_NODES',
-                            'MountSource':  'MOUNT_SOURCE',
-                            'MountPoint':   'MOUNT_POINT',
-                            'MountOptions': 'MOUNT_OPTIONS'
+"""
+  Map of EFS configuration parameter names to macro names used in the EFS template.
+"""
+EFSTemplateKeywordMap = { 
+                         'TargetNodes':  'TARGET_NODES',
+                         'MountSource':  'MOUNT_SOURCE',
+                         'MountPoint':   'MOUNT_POINT',
+                         'MountOptions': 'MOUNT_OPTIONS'
+                        }
+
+EFSParameterNames = EFSTemplateKeywordMap.keys()
+
+EFSDefaultParameterValues = {
+                              'TargetNodes': 'worker',
+                              'MountOptions': 'rw,suid,dev,exec,auto,nouser,nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport',
+                            }
+
+"""
+  Map of stack parameter names to EFS parameter names
+"""
+EFSVariableParameterMap = {
+                           'ApplicationStorageMountPoint': 'MountPoint',
+                           'EFSDNSName':                   'MountSource'
                           }
 
-ParameterNames = TemplateKeywordMappings.keys()
+EFSVariableParameterNames = EFSVariableParameterMap.keys()
 
-DefaultParameterValues = {
-                            'TargetNodes': 'worker',
-                            'MountOptions': 'rw,suid,dev,exec,auto,nouser,nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport',
+"""
+  The EFSSpecialValues is a hook to treat the MOUNT_SOURCE value with a different format string than 
+  is typical.  The str.format() method is used and the {} is a positional argument for format().
+"""
+EFSSpecialValues = {
+                     'MOUNT_SOURCE': "{}:/",
+                   }
+
+ProvisionerTemplateKeywordMap = { 
+                                  'EFSFileSystemId': 'EFS_FILE_SYSTEM_ID',
+                                  'EFSDNSName': 'EFS_DNS_NAME',
+                                  'AWSRegion': 'AWS_REGION',
+                                  'ClusterDNSName': 'MY_CLUSTER'
+                                }
+
+ProvisionerParameterNames = ProvisionerTemplateKeywordMap.keys()
+
+RBACTemplateKeywordMap = {
+                            'Namespace': 'NAMESPACE'
                          }
 
-EFSVariableParameterMappings = {
-                                 'ApplicationStorageMountPoint': 'MountPoint',
-                                 'EFSDNSName':                   'MountSource'
-                               }
+RBACParameterNames = RBACTemplateKeywordMap.keys()
 
-EFSVariableParameterNames = EFSVariableParameterMappings.keys()
 
 class ConfigureEFS(object):
   """
@@ -60,21 +91,32 @@ class ConfigureEFS(object):
   """
 
 
-  def __init__(self, stackId=None, **restArgs):
+  def __init__(self, region=None, stackId=None, **restArgs):
     """
       Constructor
+      
+      The region input is the AWS region where the EFS provisioner is running.
       
       The stackId input parameter is expected to be a AWS stack resource ID.
       The stackId is used to get the stack parameters among which is:
          EFSDNSName
          ApplicationStorageMountPoint
+         EFSFileSystemId
+         ClusterDNSName
       
-      The restArgs are keyword arguments that include the following:
-        playbookPath       - the path to the playbook to use to configure EFS
-        varFilePath        - the path to use for the Ansible playbook input variables file
-        varTemplatePath    - the path to the EFS configuration variable template
+      The restArgs keyword arguments include the following required parameters:
+        playbookPath         - the path to the playbook to use to configure EFS
+        varTemplatePath      - the path to the EFS configuration variable template
+        manifestTemplatePath - the path to the EFS provisioner manifest YAML
+        rbacTemplatePath     - the path to the EFS provisioner RBAC YAML
+        serviceAccountPath   - the path to the EFS service account YAML
     """
     object.__init__(self)
+    
+    if (not region):
+      raise MissingArgumentException("The AWS region name must be provided.")
+    #endIf
+    self.AWSRegion = region
     
     if (not stackId):
       raise MissingArgumentException("The CloudFormation boot stack ID (stackId) must be provided.")
@@ -82,7 +124,7 @@ class ConfigureEFS(object):
     
     self.stackId = stackId
     self.cfnResource = boto3.resource('cloudformation')
-    self.varFilePath = "efs"
+    self.home = os.path.expanduser("~")
     self._init(stackId, **restArgs)
   #endDef
 
@@ -129,7 +171,6 @@ class ConfigureEFS(object):
       
       The restArgs are keyword arguments that include the following:
         playbookPath       - the path to the playbook to use
-        varFilePath        - the path to use for the Ansible playbook input variables file
         varTemplatePath    - the path to the EFS configuration variable template
     """
     global StackParameters, StackParameterNames
@@ -148,19 +189,41 @@ class ConfigureEFS(object):
 
     self.varTemplatePath = varTemplatePath
     
-    varFilePath = restArgs.get('varFilePath')
-    if (not varFilePath):
-      raise MissingArgumentException("The path to use for the Ansible playbook input variables file (varFilePath) must be provided.")
+    self.varFilePath = os.path.join(self.home,"efs-config-vars.yaml")
+    
+    manifestTemplatePath = restArgs.get('manifestTemplatePath')
+    if (not manifestTemplatePath):
+      raise MissingArgumentException("The file path to the YAML defining the EFS provisioner (manifestTemplatePath) must be provided.")
     #endIf
-
-    self.varFilePath = varFilePath
+    
+    self.manifestTemplatePath = manifestTemplatePath
+    
+    rbacTemplatePath = restArgs.get('rbacTemplatePath')
+    if (not rbacTemplatePath):
+      raise MissingArgumentException("The file path to the YAML defining the EFS provisioner RBAC (rbacTemplatePath) must be provided.")
+    #endIf
+    
+    self.rbacTemplatePath = rbacTemplatePath
+    
+    serviceAccountPath = restArgs.get('serviceAccountPath')
+    if (not serviceAccountPath):
+      raise MissingArgumentException("The file path to YAML defining the EFS service account must be provided.")
+    #endIf
+    
+    self.serviceAccountPath = serviceAccountPath
     
     StackParameters = self.getStackParameters(stackId)
     StackParameterNames = StackParameters.keys()
     
     efsParms = self.getEFSParameters()
-    self.efsParameters = self.fillInDefaultValues(**efsParms)
+    self.efsParameters = self.fillInDefaultValues(parameterNames=EFSParameterNames,defaultValues=EFSDefaultParameterValues,**efsParms)
     self.efsParameterNames = self.efsParameters.keys()
+    
+    self.efsProvPath = os.path.join(self.home,"efs-provisioner.yaml")
+    self.provisionerParameters = self.getProvisionerParameters()
+    
+    self.efsRBACPath = os.path.join(self.home,"efs-rbac.yaml")
+    self.rbacParameters = self.getRBACParameters()
   #endDef
 
 
@@ -193,23 +256,63 @@ class ConfigureEFS(object):
     result = {}
     
     for name in EFSVariableParameterNames:
-      varName = EFSVariableParameterMappings.get(name)
+      varName = EFSVariableParameterMap.get(name)
       result[varName] = StackParameters.get(name)
     #endFor
     return result
   #endDef
-  
-  
-  def fillInDefaultValues(self, **restArgs):
+
+
+  def getProvisionerParameters(self):
     """
-      Return a dictionary that is a combination of values in restArgs and 
-      default parameter values in DefaultParameterValues.
+      Return a dictionary with the EFS provisioner parameter values 
+      input from the boot stack.
+      
+      AWSRegion is defined in an instance variable. It is not defined for the boot stack.
+    """
+    result = {}
+    for name in ProvisionerParameterNames:
+      if (name == 'AWSRegion'):
+        result['AWSRegion'] = self.AWSRegion
+      else:
+        result[name] = StackParameters.get(name)
+      #endIf
+    #endFor
+    
+    return result
+  #endDef  
+  
+  
+  def getRBACParameters(self):
+    """
+      Return a dictionary with the EFS RBAC name-value pairs. 
+    """
+    result = {}
+    
+    result['Namespace'] = 'default'
+    
+    return result
+  #endDef
+  
+  
+  def fillInDefaultValues(self, parameterNames=None, defaultValues=None, **restArgs):
+    """
+      Return a dictionary with values for each parameter in parameterNames that is
+      the value in restArgs or the default value in defaultValues. Ff the parameter 
+      is not defined in restArgs the default value is used.
     """
     
     result = {}
-    defaultValues = DefaultParameterValues
     
-    for parmName in ParameterNames:
+    if (not parameterNames):
+      raise MissingArgumentException("A parameter names list must be provided.")
+    #endIf
+    
+    if (not defaultValues):
+      raise MissingArgumentException("A dictionary of default values must be provided.")
+    #endIf
+    
+    for parmName in parameterNames:
       parmValue = restArgs.get(parmName,defaultValues.get(parmName))
       if (parmValue):
         result[parmName] = parmValue
@@ -220,10 +323,11 @@ class ConfigureEFS(object):
   #endDef
   
   
-  def _checkForParm(self,line,parameterNames):
+  def checkForParm(self,line,parameterNames,keywordMap):
     """
-      Return a tuple (parmName,macroName) if the given line has a substitution macro using 
-      a keyword (macroName) for one of the parameter names given in parameterNames  
+      Return a tuple (parmName,macroName) if the given line has a substitution macro  
+      using a keyword from the given keyword mapping for one of the parameter names 
+      in the given in parameterNames. 
       Otherwise, return None.  
       
       Returned tuple is of the form (parameter_name,macro_name)
@@ -231,9 +335,9 @@ class ConfigureEFS(object):
     """
     result = (None,None)
     for parmName in parameterNames:
-      macroName = TemplateKeywordMappings.get(parmName)
+      macroName = keywordMap.get(parmName)
       if (not macroName):
-        raise InvalidParameterException("The parameter name: %s was not found in TemplateKeywordMappings hash map." % parmName)
+        raise InvalidParameterException("The parameter name: %s was not found in the given keyword mappings hash map: %s" % (parmName,keywordMap))
       #endIf
       macro = "${%s}" % macroName
       if (line.find(macro) >= 0):
@@ -243,7 +347,109 @@ class ConfigureEFS(object):
     #endFor
     return result
   #endDef
+  
+  
+  def createConfigFile(self, configFilePath=None, templateFilePath=None, **restArgs):
+    """      
+      Using the template file, fill in all the variable strings in the template
+      using the given parameters.
+      
+      Required restArgs:
+        parameters: Dictionary with the actual values of the parameters
+                    The parameter values will be substituted for the corresponding
+                    macro in the template file to create the configuration file.
+        
+        keywordMap: The mapping of parameter names to macro names (keywords) in the
+                    template file.
+                    
+      Optional restArgs:
+        multipleAppearences: List of parameters that appear more than once in the
+                             template file.  Defaults to the empty list.
+                             
+        specialValues: Dictionary used for macro name that requires a special format  
+                       string to be used when doing the macro substitution.
+                       Defaults to an empty dictionary.
+            
+      Comment lines in the template file are written immediately to the config file.
+      
+      Parameters that appear in more than one line in the template file need to be
+      in the given mulitpleAppearances list.
+      
+      NOTE: It is assumed that a line in the configuration template file has at most
+      one parameter defined in it. 
+      
+      A macro in the template file is delimited by ${} with the parameter name in the {}.
+      
+    """
+    methodName = "createConfigFile"
     
+    if (not configFilePath):
+      raise MissingArgumentException("The configuration file path must be provided.")
+    #endIf
+    
+    if (not templateFilePath):
+      raise MissingArgumentException("The template file path must be provided.")
+    #endIf
+  
+    parameters = restArgs.get('parameters')
+    if (not parameters):
+      raise MissingArgumentException("Parameters must be provided.")
+    #endIf
+    
+    keywordMap = restArgs.get('keywordMap')
+    if (not keywordMap):
+      raise MissingArgumentException("Keyword mappings must be provided.")
+    #endIf
+    
+    multipleAppearances = restArgs.get('multipleAppearances',[])
+    
+    specialValues = restArgs.get('specialValues',{})
+    specialValueNames = specialValues.keys()
+    
+    parameterNames = parameters.keys()
+    
+    try:
+      with open(templateFilePath,'r') as templateFile, open(configFilePath,'w') as configFile:
+        for line in templateFile:
+          # Need to strip at least the newline character(s)
+          line = line.rstrip()
+          if (line.startswith('#')):
+            configFile.write("%s\n" % line)
+          else:
+            parmName,macroName = self.checkForParm(line,parameterNames,keywordMap)
+            if (not parmName):
+              configFile.write("%s\n" % line)
+            else:
+              parmValue = parameters[parmName]
+              if (specialValueNames and macroName in specialValueNames):
+                specialFormat = specialValues.get(macroName)
+                parmValue = specialFormat.format(parmValue)
+              #endIf
+              macro = "${%s}" % macroName
+              if (TR.isLoggable(Level.FINEST)):
+                TR.finest(methodName,"LINE: %s\n\tReplacing: %s with: %s" % (line,macro,parmValue))
+              #endIf
+              newline = line.replace(macro,"%s" % parmValue)
+              if (TR.isLoggable(Level.FINEST)):
+                TR.finest(methodName,"NEW LINE: %s" % newline)
+              #endIf
+              configFile.write("%s\n" % newline)
+              
+              if (macroName not in multipleAppearances):
+                # Only remove parmName from parameterNames when macroName  
+                # does not appear more than once in the template file.
+                parameterNames.remove(parmName)
+              #endIf
+            #endIf
+          #endIf
+        #endFor
+      #endWith 
+    except IOError as e:
+      TR.error(methodName,"IOError creating configuration variable file: %s from template file: %s" % (configFilePath,templateFilePath), e)
+      raise
+    #endTry
+  #endDef
+
   
   def createVarFile(self, varFilePath, templateFilePath):
     """
@@ -273,7 +479,7 @@ class ConfigureEFS(object):
     methodName = "createVarFile"
     
     
-    # Make a copy of configParameterNames that can be modified in this method.
+    # Make a copy of parameter names that can be modified in this method.
     parameterNames = list(self.efsParameterNames)
     
     try:
@@ -284,7 +490,7 @@ class ConfigureEFS(object):
           if (line.startswith('#')):
             varFile.write("%s\n" % line)
           else:
-            parmName,macroName = self._checkForParm(line,parameterNames)
+            parmName,macroName = self.checkForParm(line,parameterNames,EFSTemplateKeywordMap)
             if (not parmName):
               varFile.write("%s\n" % line)
             else:
@@ -340,12 +546,71 @@ class ConfigureEFS(object):
     #endTry    
   #endDef
 
+
+  def configureEFSProvisioner(self):
+    """
+      Configure an EFS dynamic storage provisioner.
+      
+      The kubectl command is used do the configuration.  It is assumed that
+      kubectl has been configured to run with a permanent config context, 
+      i.e., master node has been configured, no user and password is needed 
+      and all the other context has been set.
+      
+      TODO: Investigate using the Python kubernetes module.
+    """
+    methodName = "configureEFSProvisioner"
+    
+    self.createConfigFile(configFilePath=self.efsProvPath,
+                          templateFilePath=self.manifestTemplatePath,
+                          parameters=self.provisionerParameters,
+                          keywordMap=ProvisionerTemplateKeywordMap,
+                          multipleAppearances=['MY_CLUSTER'])
+    
+    self.createConfigFile(configFilePath=self.efsRBACPath,
+                          templateFilePath=self.rbacTemplatePath,
+                          parameters=self.rbacParameters,
+                          keywordMap=RBACTemplateKeywordMap,
+                          multipleAppearances=['NAMESPACE'])
+    
+
+    # Create the EFS Provisioner RBAC
+    TR.info(methodName,"Invoking: kubectl create -f %s" % self.efsRBACPath)
+    
+    retcode = call(["kubectl", "create", "-f", self.efsRBACPath])
+    if (retcode != 0):
+      raise Exception("Error calling kubectl. Return code: %s" % retcode)
+    #endIf
+    
+    # Create the EFS provisioner service account
+    TR.info(methodName,"Invoking: kubectl create -f %s" % self.serviceAccountPath)
+
+    retcode = call(["kubectl", "create", "-f", self.serviceAccountPath])
+    if (retcode != 0):
+      raise Exception("Error calling kubectl. Return code: %s" % retcode)
+    #endIf
+    
+    TR.info(methodName,"Invoking: kubectl apply -f %s" % self.efsProvPath)
+    retcode = call(["kubectl", "apply", "-f", self.efsProvPath])
+    if (retcode != 0):
+      raise Exception("Error calling kubectl. Return code: %s" % retcode)
+    #endIf
+        
+  #endDef
+  
   
   def configureEFS(self):
     """
       Run the playbook to configure EFS on the target nodes.
+      Configure an EFS dynamic storage provisioner (storageclass)
     """
-    self.createVarFile(self.varFilePath,self.varTemplatePath)
+    #self.createVarFile(self.varFilePath,self.varTemplatePath)
+    self.createConfigFile(configFilePath=self.varFilePath,
+                          templateFilePath=self.varTemplatePath,
+                          parameters=self.efsParameters,
+                          keywordMap=EFSTemplateKeywordMap,
+                          specialValues=EFSSpecialValues
+                          )
     self.runAnsiblePlaybook(playbook=self.playbookPath, extraVars=self.varFilePath)
+    self.configureEFSProvisioner()
   #endDef
 #endClass

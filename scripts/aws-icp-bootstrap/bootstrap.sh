@@ -88,12 +88,17 @@ if [ -z "$os" ]; then
   #exit 3
 fi
 
-# The mystack.props file holds the env vars ROOT_STACK_ID, STACK_ID and STACK_NAME, ROLE used to 
-# invoke bootstrap.py below.
+# The mystack.props file holds the env vars 
+#   REGION        - the AWS region name 
+#   ROOT_STACK_ID - root template stack ID 
+#   STACK_ID      - boot node template stack ID 
+#   STACK_NAME    - the name of the boot node stack 
+#   ROLE          - the ICP role of this stack, e.g., boot, master, proxy, worker, ...
+# All the env vars are used to invoke bootstrap.py below.
 # The mystack.props file is written out to root's home directory by the CloudFormation template.
 source ~/mystack.props
 
 # Hack to make scripts executable.
 chmod +x scripts/*.sh
 
-~/bootstrap.py --root-stackid "${ROOT_STACK_ID}" --stackid "${STACK_ID}" --stack-name ${STACK_NAME} --role ${ROLE} --logfile $LOGFILE --loglevel "*=all"
+~/bootstrap.py --region "${REGION}" --root-stackid "${ROOT_STACK_ID}" --stackid "${STACK_ID}" --stack-name ${STACK_NAME} --role ${ROLE} --logfile $LOGFILE --loglevel "*=all"

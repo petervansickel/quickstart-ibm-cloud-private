@@ -58,6 +58,8 @@ History:
   
   16 OCT 2018 - pvs - Added code to get binary content needed for the ICP installation using 
   pressigned S3 URL and the Python requests module.
+  
+  18 OCT 2018 - pvs - Added code to handle configuration of kubectl with permanent config context.
 '''
 
 from Crypto.PublicKey import RSA
@@ -85,6 +87,7 @@ from yapl.exceptions.Exceptions import NotImplementedException
 from yapl.icp.AWSConfigureICP import ConfigureICP
 from yapl.icp.AWSConfigureEFS import ConfigureEFS
 from yapl.icp.ConfigurePKI import ConfigurePKI
+from yapl.k8s.ConfigureKubectl import ConfigureKubectl
 from yapl.docker.PrivateRegistry import PrivateRegistry
 
 ClusterHostSyncSleepTime = 60
@@ -189,6 +192,7 @@ class Bootstrap(object):
 
   ArgsSignature = {
                     '--help': 'string',
+                    '--region': 'string',
                     '--stack-name': 'string',
                     '--root-stackid': 'string',
                     '--stackid': 'string',
@@ -413,6 +417,18 @@ class Bootstrap(object):
     #endFor
     
     return result
+  #endDef
+  
+  def getClusterName(self):
+    """
+      Return the FQDN used to access the ICP management console for this cluster. 
+      
+      The cluster name is the same name as the cluster CN.
+      The cluster CN is the name used in the PKI certificate created for the cluster. 
+      
+      This is a convenience method for getting the cluster FQDN.
+    """
+    return self.CN
   #endDef
   
   
@@ -873,6 +889,34 @@ class Bootstrap(object):
         TR.warning(methodName,"Unexpected role: %s" % icpRole)
       #endIf
     #endFor
+  #endDef
+  
+  
+  def getMasterHosts(self):
+    """
+      Return the list of hosts instances in role of 'master'
+      
+      Convenience method for getting the hosts with the role of 'master'
+    """
+    return self.hosts.get('master')
+  #endDef
+  
+  
+  def getMasterIPAddresses(self):
+    """
+      Return a list of ip4 addresses for the hosts in role of 'master'
+    """
+    hosts = self.getMasterHosts()
+    return [host.ip4_address for host in hosts]
+  #endDef
+
+  
+  def getMasterDNSNames(self):
+    """
+      Return a list of private DNS names for the hosts in role of 'master'
+    """
+    hosts = self.getMasterHosts()
+    return [host.private_dns_name for host in hosts]
   #endDef
   
   
@@ -1493,6 +1537,9 @@ class Bootstrap(object):
                                        environment=["LICENSE=accept"],
                                        command="cp /usr/local/bin/kubectl /data"
                                        )
+      
+      configKubectl = ConfigureKubectl(user='root',clusterName=self.getClusterName(),masterNode=self.getMasterIPAddresses()[0])
+      configKubectl.configureKube()
     #endIf
     TR.info(methodName,"COMPLETED install of kubectl to local host /usr/local/bin.")
   #endDef
@@ -1590,12 +1637,17 @@ class Bootstrap(object):
     
     # Configure EFS storage on all of the worker nodes.
     playbookPath = os.path.join(self.home,"playbooks","configure-efs-mount.yaml")
-    varFilePath = os.path.join(self.home,"efs-config-vars.yaml")
     varTemplatePath = os.path.join(self.home,"playbooks","efs-var-template.yaml")
-    configEFS = ConfigureEFS(stackId=self.bootStackId,
+    manifestTemplatePath = os.path.join(self.home,"config","efs","manifest-template.yaml")
+    rbacTemplatePath = os.path.join(self.home,"config","efs","rbac-template.yaml")
+    serviceAccountPath = os.path.join(self.home,"config","efs","service-account.yaml")
+    configEFS = ConfigureEFS(region=self.AWSRegion,
+                             stackId=self.bootStackId,
                              playbookPath=playbookPath,
-                             varFilePath=varFilePath,
-                             varTemplatePath=varTemplatePath)
+                             varTemplatePath=varTemplatePath,
+                             manifestTemplatePath=manifestTemplatePath,
+                             rbacTemplatePath=rbacTemplatePath,
+                             serviceAccountPath=serviceAccountPath)
     
     configEFS.configureEFS()
     TR.info(methodName,"COMPLETED configuration of EFS on all worker nodes.")
@@ -2041,7 +2093,14 @@ class Bootstrap(object):
       self.bootStackId = bootStackId
       TR.info(methodName,"Boot stack ID: %s" % bootStackId)
       
-
+      region = cmdLineArgs.get('region')
+      if (not region):
+        raise MissingArgumentException("The AWS region (--region) must be provided.")
+      #endIf
+      
+      self.AWSRegion = region
+      TR.info(methodName,"AWS region: %s" % region)
+      
       role = cmdLineArgs.get('role')
       if (not role):
         raise MissingArgumentException("The role of this node (--role) must be provided.")
@@ -2085,8 +2144,6 @@ class Bootstrap(object):
       # TODO: Leave this commented out until we figure out how to delete the entry when the stack is deleted.
       #self.addRoute53Aliases(self.ApplicationDomains, self.getProxyELBDNSName(), self.getProxyELBHostedZoneId())
       
-      self.configureEFS()
-      
       # set vm.max_map_count on all cluster members
       setMaxMapCountPlaybookPath = os.path.join(self.home,"playbooks", "set-vm-max-mapcount.yaml")
       self.runAnsiblePlaybook(playbookPath=setMaxMapCountPlaybookPath,targetNodes="all")
@@ -2102,8 +2159,6 @@ class Bootstrap(object):
       
       self.loadICPImages(self.imageArchivePath)
 
-      self.installKubectl()
-
       self.configureInception()
 
       # Wait for notification from all nodes that the local ICP image load has completed.
@@ -2114,6 +2169,13 @@ class Bootstrap(object):
       else:
         self.installICP()        
       #endIf
+
+      # Install kubectl includes configuration of a permanent login context so this
+      # needs to happen after the installation of ICP to get configuration artifacts.
+      self.installKubectl()
+      
+      # Configuring EFS and the EFS provisioner needs to happen after kubectl is configured. 
+      self.configureEFS()
     
     except ExitException:
       pass # ExitException is used as a "goto" end of program after emitting help info

@@ -106,7 +106,7 @@ Resources:
         - !Ref SharedStorageSecurityGroup
 
 Outputs:
-  ClusterSharedStorage:
+  EFSFileSystemId:
     Description: >-
       The EFS file system to be used for shared storage by the master nodes and worker nodes.
     Value: !Ref ClusterSharedStorage

@@ -277,6 +277,7 @@ image-security-enforcement:
     - name: "quay.io/k8scsi/csi-attacher:*"
     - name: "quay.io/k8scsi/driver-registrar:*"
     - name: "quay.io/k8scsi/nfsplugin:*"
+    - name: "quay.io/external_storage/efs-provisioner:*"
     - name: "k8s.gcr.io/hyperkube:*"
     - name: "registry.bluemix.net/armada-master/ibm-worker-recovery:*"
       

@@ -41,11 +41,11 @@
   },
   {
     "ParameterKey": "ICPBootNodeScriptPackagePath",
-    "ParameterValue": "scripts/aws-icp-bootstrap-v0.0.1.zip"
+    "ParameterValue": "scripts/aws-icp-bootstrap-v0.9.3.zip"
   },
   {
     "ParameterKey": "ICPClusterNodeScriptPackagePath",
-    "ParameterValue": "scripts/aws-icp-nodeinit-v0.0.1.zip"
+    "ParameterValue": "scripts/aws-icp-nodeinit-v0.9.3.zip"
   },
   {
     "ParameterKey": "ICPDeploymentLogsBucketName",
