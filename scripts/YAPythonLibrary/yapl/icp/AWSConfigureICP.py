@@ -29,8 +29,7 @@ TR = Trace(__name__)
 
 
 """
-  The StackParameters are imported from the root CloudFormation stack in the _init() 
-  method below.
+  The StackParameters are passed in to the constructor from the caller.
 """
 StackParameters = {}
 StackParameterNames = []
@@ -47,6 +46,7 @@ TemplateKeywordMappings = {
                            'ClusterCIDR':                     'CLUSTER_CIDR',
                            'ClusterDomain':                   'CLUSTER_DOMAIN',
                            'ClusterLBAddress':                'CLUSTER_LB_ADDRESS',
+                           'ClusterDNSName':                  'CLUSTER_DNS_NAME',
                            'ClusterName':                     'CLUSTER_NAME',
                            'ClusterVIP':                      'CLUSTER_VIP',
                            'CluserVIPIface':                  'CLUSTER_VIP_IFACE',
@@ -170,8 +170,7 @@ class ConfigureICP(object):
       and with values in the StackParameters dictionary.
       
       NOTE: The StackParameters are intended to be read-only.  It's not 
-      likely they would be set in the Bootstrap instance once they are 
-      initialized in _getStackParameters().
+      likely they would be set once they are initialized.
     """
     if (attributeName in StackParameterNames):
       StackParameters[attributeName] = attributeValue
@@ -220,10 +219,14 @@ class ConfigureICP(object):
 
     self.etcHostsPlaybookPath = restArgs.get('etcHostsPlaybookPath')
     
-    StackParameters = self.getStackParameters(self.rootStackId)
+    StackParameters = restArgs.get('stackParameters')
+    if (not StackParameters):
+      raise MissingArgumentException("The stack parameters must be provided.")
+    #endIf
+    
     StackParameterNames = StackParameters.keys()
     
-    configParms = self.getConfigParameters(self.rootStackId)
+    configParms = self.getConfigParameters(StackParameters)
     if (TR.isLoggable(Level.FINEST)):
       TR.finest(methodName,"Parameters defined in the stack:\n\t%s" % configParms)
     #endIf
@@ -409,22 +412,30 @@ class ConfigureICP(object):
   #endDef
 
   
-  def getConfigParameters(self, stackId):
+  def getConfigParameters(self, parameters):
     """
       Return a dictionary with configuration parameter name-value pairs extracted
-      from the CloudFormation stack parameters relevant to the ICP Configuration.
+      from the given parameters dictionary.
       
-      Only stack parameters with names in the ConfigurationParameterNames list
+      Only parameters with names in the ConfigurationParameterNames list
       are included in the result set.
+    
     """
+    methodName = "getConfigParameters"
+    
+    if (not parameters):
+      raise MissingArgumentException("The dictionary of parameters from which to get the configuration parameters must be provided.")
+    #endIf
+    
+    if (TR.isLoggable(Level.FINEST)):
+      TR.finest(methodName,"ConfigurationParameterNames: %s" % ConfigurationParameterNames)
+    #endIf
+    
     result = {}
     
-    stack = self.cfnResource.Stack(stackId)
-    stackParameters = stack.parameters
-    for parm in stackParameters:
-      parmName = parm['ParameterKey']
+    for parmName in parameters.keys():
       if (parmName in ConfigurationParameterNames):
-        result[parmName] = parm['ParameterValue']
+        result[parmName] = parameters[parmName]
       #endIf
     #endFor
     

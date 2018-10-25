@@ -184,7 +184,7 @@ Parameters:
     Description: >-
       The fully qualified domain name (FQDN) to be used for the cluster name. The ClusterDNSName must be the same value as the ClusterCADomain and the CN used in the cluster PKI key/certificate.
     Type: String
-    
+
   ClusterDomain:
     Description: >-
       The network domain of the cluster.
@@ -193,6 +193,16 @@ Parameters:
   ClusterName:
     Description: >-
       The name of the cluster.
+    Type: String
+
+  ClusterPKIBucketName:
+    Description: >-
+      The S3 bucket where the cluster PKI artifacts are located. If not provided, self-signed PKI artifacts will be created and used.
+    Type: String
+
+  ClusterPKIRootPath:
+    Description: >-
+      The path in the cluster PKI S3 bucket where the user defined PKI key and certificate files are found.  This is the key and certificate that used for the master node identity.  The CN of the key and certificate must be the same value that is provided in ClusterCADomain.  The extensions on the root path are assumed to be .key and .crt to get the key and certificate files respectively. DO NOT provide a leading / on the path value. If not provided, self-signed PKI artifacts will be created and used.
     Type: String
 
   CustomArtifactsPath:

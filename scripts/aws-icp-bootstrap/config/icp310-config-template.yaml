@@ -239,7 +239,7 @@ management_services:
 image-security-enforcement:
   clusterImagePolicy:
     - name: "docker.io/ibmcom/*"
-    - name: "mycluster.icp:8500/*"
+    - name: "${CLUSTER_DNS_NAME}:8500/*"
     - name: "registry.bluemix.net/ibm/*"
     - name: "docker.io/hybridcloudibm/*"
     - name: "docker.io/db2eventstore/*"

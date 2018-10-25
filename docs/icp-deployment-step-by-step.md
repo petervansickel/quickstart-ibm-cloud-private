@@ -56,7 +56,16 @@ This section documents the "tricks" that are used to get request traffic from a 
 
 ## Sample command line invocations
 
-As of 2018-0815:
+**IBM Internal Use Only**
+
+The command samples assume the AWS ICP QuickStart git repo is cloned to the deployer's desktop.  
+
+The parameter JSON files are wired for S3 buckets that are accessible by IBM AWS account owners using the Hursley Lab account ID.  
+
+S3 buckets have set up in `us-west-1`, `us-east-1` and `us-east-2` for the artifacts that are needed for the installation.
+
+As of 2018-1024:
+
 ```
-aws cloudformation create-stack --template-body file://~/git/aws-icp-quickstart/cloudformation/stacked/ibm-cloud-private-root-010.yaml --parameters file://~/git/aws-icp-quickstart/cloudformation/stacked/stacked-parameters-pvsdeploy-010.json --capabilities CAPABILITY_IAM --stack-name pvsICPTestStack-2018-0815-01
+aws cloudformation create-stack --template-body file://~/git/aws-icp-quickstart/cloudformation/0.9.3/00-ibm-cloud-private-root.yaml --parameters file://~/git/aws-icp-quickstart/cloudformation/parameters/0.9.3/icp310-parameters-us-west-1-1az-nonha-pvsdeploy.json --capabilities CAPABILITY_IAM --stack-name pvsICPTestStack-2018-1024-01
 ```

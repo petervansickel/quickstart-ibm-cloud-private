@@ -60,6 +60,11 @@ History:
   pressigned S3 URL and the Python requests module.
   
   18 OCT 2018 - pvs - Added code to handle configuration of kubectl with permanent config context.
+  
+  19-22 OCT 2018 - pvs - Added code to configure EFS provisioner, i.e., EFS StorageClass.
+  
+  23 OCT 2018 - pvs - Added code to allow for deployer provided PKI artifacts for cluster identity
+  Added code to configure cloudctl, helm.
 '''
 
 from Crypto.PublicKey import RSA
@@ -471,7 +476,7 @@ class Bootstrap(object):
     StackParameterNames = StackParameters.keys()
     
     if (TR.isLoggable(Level.FINEST)):
-      TR.finest(methodName,"StackParameterNames: %s" % StackParameterNames)
+      TR.finest(methodName,"StackParameters: %s" % StackParameters)
     #endIf
       
     # Create a second icpVersion that is the same as the ICPVersion from the stack parameters
@@ -1510,6 +1515,33 @@ class Bootstrap(object):
   #endDef
   
   
+  def installCloudctl(self):
+    """
+      After the cluster is up and running, install the IBM Cloud Private CLI (cloudctl)
+      
+      Instructions for how to install cloudctl are in the ICP Knowledge Center section,
+      "Installing the IBM Cloud Private CLI".  
+      For ICP 3.1.0 see: 
+      https://www.ibm.com/support/knowledgecenter/SSBS6K_3.1.0/manage_cluster/install_cli.html
+      
+      ASSUMPTIONS:
+        1. ICP is installed and running
+        2. An entry in /etc/hosts exists to resolve the cluster name to an IP address
+        3. Verifying the SSL connection to the master is irrelevant.  The master may
+           be using a self-signed certificate.
+        
+    """
+    cloudctlPath = "/usr/local/bin/cloudctl"
+    url = "https://%s:8443/api/cli/cloudctl-linux-amd64" % self.getClusterName()
+    r = requests.get(url, verify=False, stream=True)
+    with open(cloudctlPath, 'wb') as cloudctlFile:
+      shutil.copyfileobj(r.raw, cloudctlFile)
+    #endWith
+    
+    chmod(cloudctlPath, 0755)
+  #endDef
+  
+  
   def installKubectl(self):
     """
       Copy kubectl out of the icp-inception image to /usr/local/bin
@@ -1601,6 +1633,53 @@ class Bootstrap(object):
   #endDef
 
   
+  def configurePKI(self):
+    """
+      Configure the PKI certificates for the cluster. 
+      
+      The primary use-case is that the deployer will provide a CA signed key and certificate in 
+      an S3 bucket named in the ClusterPKIBucketName input parameter and located at the 
+      ClusterPKIRootPath in that bucket.  
+      
+      If either of those two input parameters are empty, then self-signed certs are created and 
+      used.  The CN of the self-signed cert will be the CN of the cluster.  See getClusterCN().
+    """
+    methodName = "configurePKI"
+    
+    if (self.ClusterPKIBucketName and self.ClusterPKIRootPath):
+      bucket = self.ClusterPKIBucketName
+      rootKey = self.ClusterPKIRootPath
+      TR.info(methodName,"Using deployer provided PKI key and certificate for cluster: %s identity." % self.CN)
+
+      if (not os.path.exists(self.pkiDirectory)):
+        os.makedirs(self.pkiDirectory,0600)
+      #endIf
+    
+      keyFilePath = os.path.join(self.pkiDirectory, "%s.key" % self.pkiFileName)
+      TR.info(methodName,"Downloading PKI key from S3 bucket: %s with key: %s.key to file: %s" % (bucket,rootKey,keyFilePath))
+      with open(keyFilePath,'wb') as pkiKeyFile:
+        self.s3.download_fileobj(bucket,'%s.key' % rootKey, pkiKeyFile)
+      #endWith
+      
+      certFilePath = os.path.join(self.pkiDirectory, "%s.crt" % self.pkiFileName)
+      TR.info(methodName,"Downloading PKI certificate from S3 bucket: %s with key: %s.crt to file: %s" % (bucket,rootKey,certFilePath))
+      with open(certFilePath,'wb') as pkiCertFile:
+        self.s3.download_fileobj(bucket,'%s.crt' % rootKey, pkiCertFile)
+      #endWith
+      
+    else:
+      TR.info(methodName,"Using self-signed PKI key and certificate for cluster: %s identity." % self.CN)
+      pkiconfig = {
+        'bits': 4096,
+        'CN': self.CN
+        }
+      configurePKI = ConfigurePKI(pkiDirectory=self.pkiDirectory,pkiFileName=self.pkiFileName,**pkiconfig)
+      pkiParms = configurePKI.getPKIParameters()
+      configurePKI.createKeyCertPair(**pkiParms)
+    #endIf
+  #endDef
+  
+  
   # NOTE: Not using this for now.  The fixpack fails to install when a private registry is used.
   #       We have to have the fixpack for ICP to run on AWS.
   # WARNING: The code associated with configuring a private registry has not been tested at all.
@@ -1662,6 +1741,7 @@ class Bootstrap(object):
     
     configureICP = ConfigureICP(stackIds=self.stackIds, 
                                 configTemplatePath=self.configTemplatePath,
+                                stackParameters=StackParameters,
                                 etcHostsPlaybookPath=self.etcHostsPlaybookPath)
     
     TR.info(methodName,"STARTED creating config.yaml file.")
@@ -1731,14 +1811,8 @@ class Bootstrap(object):
     shutil.copyfile("/root/config.yaml", "%s/cluster/config.yaml" % self.icpHome)
     shutil.copyfile("/root/.ssh/id_rsa", "%s/cluster/ssh_key" % self.icpHome)
     
-    pkiconfig = {
-      'bits': 4096,
-      'CN': self.CN
-      }
-    configurePKI = ConfigurePKI(pkiDirectory=self.pkiDirectory,pkiFileName=self.pkiFileName,**pkiconfig)
-    pkiParms = configurePKI.getPKIParameters()
-    configurePKI.createKeyCertPair(**pkiParms)
-    
+    self.configurePKI()
+        
     TR.info(methodName,"IBM Cloud Private Inception configuration completed.")    
   #endDef
 
@@ -2155,6 +2229,7 @@ class Bootstrap(object):
       # Cluster nodes will proceed with loading ICP installation images locally from the ICP install archive. 
       self.putSSMParameter("/%s/docker-installation" % self.rootStackName,"COMPLETED",description="Docker installation status.")
 
+      # Create the config.yaml file for the inception install
       self.createConfigFile()
       
       self.loadICPImages(self.imageArchivePath)
@@ -2176,6 +2251,9 @@ class Bootstrap(object):
       
       # Configuring EFS and the EFS provisioner needs to happen after kubectl is configured. 
       self.configureEFS()
+      
+      # Install of Cloudctl needs to happen after ICP is installed and running. 
+      self.installCloudctl()
     
     except ExitException:
       pass # ExitException is used as a "goto" end of program after emitting help info

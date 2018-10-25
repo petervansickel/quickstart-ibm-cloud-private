@@ -20,6 +20,14 @@
     "ParameterValue": "0.9.3"
   },
   {
+    "ParameterKey": "ClusterPKIBucketName",
+    "ParameterValue": "aws-icp-quickstart-us-west-1"
+  },
+  {
+    "ParameterKey": "ClusterPKIRootPath",
+    "ParameterValue": "pki/mycluster.example.com"    
+  },
+  {
     "ParameterKey": "CustomArtifactsPath",
     "ParameterValue": "custom/aws.zip"
   },

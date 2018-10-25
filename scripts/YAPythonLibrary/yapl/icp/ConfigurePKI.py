@@ -1,4 +1,3 @@
-"""
 # Licensed Material - Property of IBM
 # 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
 # US Government Users Restricted Rights - Use, duplication or disclosure
@@ -12,6 +11,7 @@
 # your use of the sample code, even if IBM has been advised of the possibility 
 # of such damages.
 
+"""
 Created on Aug 11, 2018
 
 @author: Peter Van Sickel - pvs@us.ibm.com
