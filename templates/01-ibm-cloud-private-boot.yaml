@@ -1,17 +1,3 @@
-###############################################################################
-# Licensed Material - Property of IBM
-# 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
-# US Government Users Restricted Rights - Use, duplication or disclosure
-# restricted by GSA ADP Schedule Contract with IBM Corp.
-#
-# DISCLAIMER:
-# The following source code is sample code created by IBM Corporation.
-# This sample code is provided to you solely for the purpose of assisting you
-# in the  use of  the product. The code is provided 'AS IS', without warranty or
-# condition of any kind. IBM shall not be liable for any damages arising out of
-# your use of the sample code, even if IBM has been advised of the possibility
-# of such damages.
-###############################################################################
 #
 # NOTES:
 #  Each ICP node has an ICPRole tag that is used by the bootstrapping
@@ -22,11 +8,7 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  This template deploys an ICP Boot node for orchestrating the deployment of
-  an IBM Cloud Private stack.
-  **WARNING** This template creates EC2 instances and related resources. You
-  will be billed for the AWS resources used if you create a stack from this
-  template.
+  This template deploys an ICP Boot node for orchestrating the deployment of an IBM Cloud Private stack. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
@@ -123,8 +105,6 @@ Metadata:
         default: EC2 Key Pair Name
       ResourceOwner:
         default: Resource Owner
-      RootStackId:
-        default: Root Stack Resource ID
       RootStackName:
         default: Root Stack Name
       S3ICPFixpackExecutablePath:
@@ -136,6 +116,11 @@ Metadata:
 
 Parameters:
   # Variables are declared in alphabetical order.
+  ApplicationDomains:
+    Description: >-
+      A list of fully qualified domain names used for applications.  Each name gets an alias record in the Route53 DNS to the Proxy node Elastic Load Balancer public DNS name. The ApplicationDomains must be consistent with the VPCDomain.
+    Type: CommaDelimitedList
+
   ApplicationStorageMountPoint:
     Description: >-
       Mount point for the EFS volume to be used for application shared storage.  The Kubernetes EFS provisioner uses this mount point. Used by the bootstrap script.
@@ -194,6 +179,15 @@ Parameters:
     Description: >-
       The name of the cluster.
     Type: String
+
+  ClusterLBAddress:
+    Description: >-
+      The value to use for the cluster load balancer address.  This value is used to drive the logic in the bootstrap script.
+    Type: String
+    AllowedValues:
+      - UseMasterELBAddress
+      - UseMasterELBName
+      - UseClusterName
 
   ClusterPKIBucketName:
     Description: >-
@@ -268,9 +262,19 @@ Parameters:
       The network domain of the cluster.
     Type: String
 
+  ClusterHostedZoneId:
+    Description: >-
+      The HostedZone resource ID for the ICP cluster.  The ClusterHostedZoneID is used by the bootstrap script to create alias record entries for the Proxy ELB DNS name.
+    Type: String
+
   ClusterName:
     Description: >-
       The name of the cluster.
+    Type: String
+
+  ExcludedMgmtServices:
+    Description: >-
+      String with the form of a comma delimited list of management services to be excluded from the IBM Cloud Private deployment.  Services that may be excluded are: service-catalog, metering, monitoring, istio, vulnerability-advisor, custom-metrics-adapter
     Type: String
 
   ICPArchivePath:
@@ -303,6 +307,11 @@ Parameters:
       The command string to use when invoking the ICP installation.
     Type: String
 
+  InceptionTimeout:
+    Description: >-
+      The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  Provided by the parent stack.  Used in the bootstrap script.
+    Type: Number
+
   InstallFromConfigSet:
     Description: >-
       Variable used to determine when the installation images get copied to the ICP boot node.  If 'Yes', then the installation images are copied at the time the ICP boot node is instantiated using the BaseInstall config set defined in the instance.  If 'No', then the installation images are copied to the boot node using a pre-signed S3 URL as part of the bootstrap script.
@@ -316,15 +325,16 @@ Parameters:
       - Yes
       - No
 
+  InstallationCompletedURL:
+    Description: >-
+      The pre-assigned URL to use for signalling the ICPInstallationCompleted wait condition in the parent stack.  The bootstrap script sends a signal to the wait condition when the inception install and all the other configuration of ICP has completed.
+    Type: String
+
+  # TODO - I don't think this is needed in this template.  Need to test.
   InternalSSHSecurityGroup:
     Description: >-
       The InternalSSHSecurityGroup resource ID from the parent template.
     Type: String
-
-  InceptionTimeout:
-    Description: >-
-      The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  Provided by the parent stack.  Used in the bootstrap script.
-    Type: Number
 
   KeyFilePath:
     Description: >-
@@ -337,6 +347,33 @@ Parameters:
     Type: AWS::EC2::KeyPair::KeyName
     ConstraintDescription: Must be the name of an existing EC2 KeyPair.
 
+  MasterNodeCount:
+    Description: >-
+      Number of master nodes to be deployed in the ICP cluster. Must be an odd number. For a development deployment 1 is sufficient; for production deployments, 3.
+    Type: Number
+    AllowedValues:
+      - 1
+      - 3
+
+  ProxyELBHostedZoneID:
+    Description: >-
+      The Proxy ELB HostedZone resource ID is used by the bootstrap script to create alias record entries for the Proxy ELB DNS name.
+    Type: String
+
+  ProxyLBAddress:
+    Description: >-
+      The value to use for the proxy load balancer address.  This value is used to drive the logic in the bootstrap script.
+    Type: String
+    AllowedValues:
+      - UseProxyELBAddress
+      - UseProxyELBName
+      - UsePrimaryAppDomain
+
+  ProxyNodeLoadBalancerName:
+    Description: >-
+      The DNS name of the ICP Proxy node Elastic Load Balancer.
+    Type: String
+
   PublicSubnetIds:
     Description: >-
       A comma delimted list of public subnet resource IDs passed in from the parent stack.
@@ -345,11 +382,6 @@ Parameters:
   ResourceOwner:
     Description: >-
       Value for the owner tag for the deployed resource associated with the stack.
-    Type: String
-
-  RootStackId:
-    Description: >-
-      The AWS resource ID for the root stack.
     Type: String
 
   RootStackName:
@@ -377,6 +409,15 @@ Parameters:
       ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
     ConstraintDescription: >-
       Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  StackIds:
+    Description: List of resource IDs for the all of the nested stacks
+    Type: CommaDelimitedList
+
+  VPCDomain:
+    Description: >-
+      The network domain of the VPC.  The VPCDomain is used when defining the hosted zone.
+    Type: String
 
 
 Mappings:
@@ -517,7 +558,6 @@ Resources:
               content: !Sub |
                 REGION=${AWS::Region}
                 STACK_NAME=${RootStackName}
-                ROOT_STACK_ID="${RootStackId}"
                 STACK_ID="${AWS::StackId}"
                 ROLE=boot
 
@@ -559,7 +599,6 @@ Resources:
             #!/bin/bash -xe
             apt update -y
             # Steps to get to the latest ansible
-            apt upgrade -y
             apt install -y software-properties-common
             apt-add-repository -y ppa:ansible/ansible
             apt update -y
@@ -596,6 +635,8 @@ Resources:
             chmod +x /root/*.py
             cd /root
             /root/bootstrap.sh --os ubuntu
+            rc=$?
+            /usr/local/bin/cfn-signal -e $rc --id ${AWS::StackId} --reason "ICP Installation Status" "${InstallationCompletedURL}"
 
       Tags:
         - Key: Name
@@ -606,9 +647,3 @@ Resources:
           Value: Boot
         - Key: !Sub kubernetes.io/cluster/${RootStackName}
           Value: ${RootStackName}
-
-Outputs:
-  StackId:
-    Description: >-
-      The Boot node stack resource ID.  Needed for introspection of the boot node stack to pull out the EC2 instance information for the boot node.
-    Value: !Ref AWS::StackId

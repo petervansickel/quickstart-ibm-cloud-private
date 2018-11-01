@@ -1,20 +1,6 @@
 #!/usr/bin/python
-###############################################################################
-# Licensed Material - Property of IBM
-# 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
-# US Government Users Restricted Rights - Use, duplication or disclosure
-# restricted by GSA ADP Schedule Contract with IBM Corp.
-#
-# DISCLAIMER:
-# The following source code is sample code created by IBM Corporation.
-# This sample code is provided to you solely for the purpose of assisting you
-# in the  use of  the product. The code is provided 'AS IS', without warranty or
-# condition of any kind. IBM shall not be liable for any damages arising out of
-# your use of the sample code, even if IBM has been advised of the possibility
-# of such damages.
-###############################################################################
 
-'''
+"""
 Created on 30 MAY 2018
 
 @author: Peter Van Sickel pvs@us.ibm.com
@@ -57,15 +43,20 @@ History:
   the outputs were empty.
   
   16 OCT 2018 - pvs - Added code to get binary content needed for the ICP installation using 
-  pressigned S3 URL and the Python requests module.
+  pre-signed S3 URL and the Python requests module.
   
   18 OCT 2018 - pvs - Added code to handle configuration of kubectl with permanent config context.
   
   19-22 OCT 2018 - pvs - Added code to configure EFS provisioner, i.e., EFS StorageClass.
   
-  23 OCT 2018 - pvs - Added code to allow for deployer provided PKI artifacts for cluster identity
-  Added code to configure cloudctl, helm.
-'''
+  23-29 OCT 2018 - pvs - Added code to allow for deployer provided PKI artifacts for cluster identity
+  Added code to configure cloudctl, helm.  It took awhile to get helm repo add to work properly due
+  to not setting HELM_HOME correctly in the context of the Python process.  See ConfigureHelm module.
+  
+  30 OCT 2018 - pvs - Refactored to eliminate need to introspect root stack for outputs.
+  All bootstrap script inputs come from boot stack parameters.  Also removed some other dead code
+  for doing a private registry.
+"""
 
 from Crypto.PublicKey import RSA
 from subprocess import call
@@ -84,7 +75,6 @@ from yapl.exceptions.Exceptions import MissingArgumentException
 from yapl.exceptions.Exceptions import InvalidArgumentException
 from yapl.exceptions.AWSExceptions import AWSStackResourceException
 from yapl.exceptions.ICPExceptions import ICPInstallationException
-from yapl.exceptions.Exceptions import NotImplementedException
 
 # Having trouble getting InstallDocker to work due to Ansible Python library issues.
 #from yapl.docker.InstallDocker import InstallDocker
@@ -93,7 +83,7 @@ from yapl.icp.AWSConfigureICP import ConfigureICP
 from yapl.icp.AWSConfigureEFS import ConfigureEFS
 from yapl.icp.ConfigurePKI import ConfigurePKI
 from yapl.k8s.ConfigureKubectl import ConfigureKubectl
-from yapl.docker.PrivateRegistry import PrivateRegistry
+from yapl.icp.ConfigureHelm import ConfigureHelm
 
 ClusterHostSyncSleepTime = 60
 ClusterHostSyncMaxTryCount = 100
@@ -199,7 +189,6 @@ class Bootstrap(object):
                     '--help': 'string',
                     '--region': 'string',
                     '--stack-name': 'string',
-                    '--root-stackid': 'string',
                     '--stackid': 'string',
                     '--role': 'string',
                     '--logfile': 'string',
@@ -235,18 +224,15 @@ class Bootstrap(object):
     self.hosts = { 'master': [], 'worker': [], 'proxy': [], 'management': [], 'va': [], 'etcd': []}
     self.clusterHosts = []
     self.bootHost = None
-    self.rootStackOutputs = {}
         
-    # Where the CloudFormation template puts the inception fixpack archive.
+    # Where the CloudFormation template puts the ICP inception fixpack archive.
     self.inceptionFixpackArchivePath = "/tmp/icp-inception-fixpack.tar"
     
-    # Various log file paths
+    # Where the CloudFormation template puts the ICP base install tgz.
     self.imageArchivePath = "/tmp/icp-install-archive.tgz"
-    self.icpInstallLogFilePath = os.path.join("%s" % self.logsHome, "icp-install-%s.log" % self._getTimeStamp())
     
-    # Some private registry parameters (Install from private registry is not implemented yet.)
-    self.serverPKIDirectory = "/opt/registry/certs"
-    self.clientPKIDirectory = "/etc/docker/certs.d/%s\:8500/" % self.fqdn
+    # Various log file paths (not used)
+    #self.icpInstallLogFilePath = os.path.join("%s" % self.logsHome, "icp-install-%s.log" % self._getTimeStamp())
     
   #endDef
 
@@ -322,12 +308,6 @@ class Bootstrap(object):
     #endIf
 
     return value
-  #endDef
-
-
-  def _getTimeStamp(self):
-    now = datetime.datetime.now()
-    return now.strftime("%y-%m%d-%H%M")
   #endDef
 
 
@@ -448,12 +428,9 @@ class Bootstrap(object):
   #endDef
   
   
-  def _init(self, rootStackId, rootStackName, bootStackId):
+  def _init(self, rootStackName, bootStackId):
     """
       Additional initialization of the Bootstrap instance based on stack parameters.
-      
-      The rootStackId is passed along in position 0 of the list of stack IDs that 
-      is set to the stackIds instance variable.
       
       The rootStackName is used as part of the SSM parameter key.  All of the cluster 
       nodes expect to see parameters based on the root stack name.
@@ -470,9 +447,7 @@ class Bootstrap(object):
     methodName = "_init"
     global StackParameters, StackParameterNames
     
-    bootStackParameters = self.getStackParameters(bootStackId)
-    rootStackParameters = self.getStackParameters(rootStackId)
-    StackParameters = self.addParameters(bootStackParameters,rootStackParameters)
+    StackParameters = self.getStackParameters(bootStackId)
     StackParameterNames = StackParameters.keys()
     
     if (TR.isLoggable(Level.FINEST)):
@@ -523,20 +498,16 @@ class Bootstrap(object):
     self.pkiFileName = 'icp-router'
     self.CN = self.getClusterCN()
 
-    # Root stack ID is in position 0 of the stackIds list
-    self.stackIds = [ rootStackId ]
-    nestedStacks =  self._getNestedStacks(rootStackId)
-    if (not nestedStacks):
-      raise AWSStackResourceException("The root stack is expected to have several nested stacks, but none were found.")
-    #endIf
-    self.stackIds.extend(nestedStacks)
+    self.stackIds =  self._getStackIds(bootStackId)
+    
+    # pre-signed URL for the ICP IntallationCompletedHandle
+    self.installCompletedEventURL = self.InstallationCompletedURL
     
     self._getHosts(self.stackIds)
 
     self._getSSMParameterKeys(rootStackName)
     
-    self.rootStackOutputs = self.getStackOutputs(rootStackId)
-        
+            
   #endDef
   
   
@@ -585,29 +556,14 @@ class Bootstrap(object):
     #endIf
   #endIf
   
-  def getRootStackOutput(self, outputName):
-    """
-      Return the root stack output with the given outputName
-    """
-    if (not self.rootStackOutputs):
-      self.rootStackOutputs = self.getStackOutputs(self.rootStackId)
-    #endIf
-    
-    return self.rootStackOutputs.get(outputName)
-  #endDef
-  
-  
+
   def getProxyELBDNSName(self):
     """
       Return the proxy ELB DNS name.
       
-      The proxy ELB DNS name is the ProxyNodeLoadBalancerName output of the root stack.  
+      The proxy ELB DNS name is the ProxyNodeLoadBalancerName input to the boot stack.  
     """ 
-    name = self.getRootStackOutput('ProxyNodeLoadBalancerName')
-    
-    if (not name):
-      raise AWSStackResourceException("The root stack: %s must have an output with key: ProxyNodeLoadBalancerName" % self.rootStackId)
-    #endIf
+    name = self.ProxyNodeLoadBalancerName
     
     return name
   #endDef
@@ -646,24 +602,7 @@ class Bootstrap(object):
     return result
   #endDef
   
-  
-  def getProxyELBHostedZoneId(self):
-    """
-      Return the hosted zone ID for this VPC.
-      
-      The HostedZone is one of the root stack outputs.
-    """
     
-    hostedZoneId = self.getRootStackOutput('ProxyELBHostedZoneID')
-    
-    if (not hostedZoneId): 
-      raise AWSStackResourceException("The root stack: %s must have an output with key: ProxyELBHostedZone" % self.rootStackId)
-    #endIf
-    
-    return hostedZoneId
-  #endDef
-  
-  
   def addRoute53Aliases(self, aliases, target, targetHostedZoneId):
     """
       For each alias in the aliases list, add an alias entry for the target to Route53 DNS.
@@ -677,12 +616,6 @@ class Bootstrap(object):
     
     if (type(aliases) != type([])):
       aliases = [alias.strip() for alias in aliases.split(',')]
-    #endIf
-    
-    clusterHostedZoneId = self.getRootStackOutput('ClusterHostedZoneId')
-    
-    if (not clusterHostedZoneId):
-      raise AWSStackResourceException("The root stack: %s must have an output with key: ClusterHostedZoneId" % self.rootStackId)
     #endIf
     
     changes = []
@@ -708,7 +641,7 @@ class Bootstrap(object):
     #endFor
     
     changeBatch = {'Comment': 'Create/update %s DNS aliases' % target, 'Changes': changes}
-    response = self.route53.change_resource_record_sets(HostedZoneId=clusterHostedZoneId,ChangeBatch=changeBatch)
+    response = self.route53.change_resource_record_sets(HostedZoneId=self.ClusterHostedZoneId,ChangeBatch=changeBatch)
     
     if (not response):
       raise ICPInstallationException("Failed to update Route53 resource record(s)")
@@ -752,7 +685,7 @@ class Bootstrap(object):
       #endFor
     #endFor
     
-    return result  
+    return result
   #endDef
   
   
@@ -797,45 +730,20 @@ class Bootstrap(object):
   #endDef
   
   
-  def _getNestedStacks(self, rootStackId):
+  def _getStackIds(self, bootStackId):
     """
-      Return a list of the nested stack resource IDs associated with the given root stack ID.
+      Return a list of stack IDs from the StackIds boot stack input parameter.
       
-      By convention the nested stack resource IDs are provided by the CloudFormation root 
-      stack template in the Outputs.  The output variable name is StackIds and it is a 
-      string representation of a list of resource Ids where the separator is a comma.
-      
-      AWS CloudFormation does not support real list structure in the output values.
-    
+      The StackIds input parameter is a comma separated list of stack IDs of all
+      the stacks that may have EC2 instances are auto-scaling groups, except for
+      the boot stack.  The boot stack ID comes in on the command line.
     """
-    response = self.cfnClient.describe_stacks(StackName=rootStackId)
-    if (not response):
-      raise AWSStackResourceException("Empty result for CloudFormation describe_stacks for stack: %s" % rootStackId)
-    #endIf
     
-    stacks = response.get('Stacks')
-    if (len(stacks) != 1):
-      raise AWSStackResourceException("Unexpected number of stacks: %d, from describe_stacks for stack: %s" % (len(stacks),rootStackId))
-    #endIf
-    
-    rootStack = stacks[0]
-    outputs = rootStack.get('Outputs')
-    if (not outputs):
-      raise AWSStackResourceException("No outputs defined for the ICP root stack: %s" % rootStackId)
-    #endIf
-    
-    nestedStackIds = None
-    for output in outputs:
-      key = output.get('OutputKey')
-      if (key == 'StackIds'):
-        nestedStackIds = output.get('OutputValue').split(',')
-        break
-      #endIf
-    #endFor
-    
-    return nestedStackIds
+    stackIds = self.StackIds.split(',')
+    stackIds.append(bootStackId)
+    return stackIds
   #endDef
-  
+    
   
   def _getHosts(self, stackIds):
     """
@@ -843,8 +751,6 @@ class Bootstrap(object):
       cluster based on the ICPRole tag associated with each host (EC2 instance).
       
       The deployment is made up of a root stack and several nested stacks.
-      
-      The nested stackIds are in the Outputs section of the root stack.
       
       The root stack and other supporting stacks may not have any EC2 instances.
       
@@ -1680,24 +1586,6 @@ class Bootstrap(object):
   #endDef
   
   
-  # NOTE: Not using this for now.  The fixpack fails to install when a private registry is used.
-  #       We have to have the fixpack for ICP to run on AWS.
-  # WARNING: The code associated with configuring a private registry has not been tested at all.
-  def configurePrivateRegistry(self):
-    """
-      Use the PrivateRegistry class to configure a Docker private registry to be used
-      for the IBM Cloud Private installation.
-    """
-    raise NotImplementedException("The configurePrivateRegistry method is not implemented yet.")
-  
-    privateRegistry = PrivateRegistry(serverPKIDirectory=self.serverPKIDirectory,
-                                      clientPIKDirectory=self.clientPKIDirectory,
-                                      bits=4096,
-                                      CN=self.fqdn)
-    privateRegistry.configurePrivateRegistry()
-  #endIf
-  
-  
   def configureEFS(self):
     """
       Configure an EFS volume and configure all worker nodes to be able to use 
@@ -2007,6 +1895,23 @@ class Bootstrap(object):
   #endDef
 
 
+  def installHelm(self):
+    """
+      Install and configure Helm.
+      
+      This method can only run after ICP and kubectl have been installed.
+    """
+    methodName = 'installHelm'
+    
+    TR.info(methodName, "STARTED Helm installation and configuration.")
+    
+    configHelm = ConfigureHelm(self.ClusterDNSName)
+    configHelm.installAndConfigureHelm()
+    
+    TR.info(methodName, "COMPLETED Helm installation and configuration.")
+  #endDef 
+  
+  
   def installICP(self):
     """
       Install ICP.
@@ -2116,6 +2021,41 @@ class Bootstrap(object):
   #endDef
 
   
+  def signalWaitHandle(self, eth, etm, ets):
+    """
+      Send a status signal to the "install completed" wait condition via the presigned URL
+      provided to the boot stack.
+      
+      NOTE: This code failed to work properly.  Getting 403 status from the requests.put().
+    """
+    methodName = 'signalWaitHandle'
+    try:
+      if (self.rc == 0):
+        status = {
+          "Status": "SUCCESS", 
+          "Reason": "ICP Installation Status",
+          "UniqueId" : "%s" % self.bootStackId,
+          "Data" : "ICP installation elapsed time: %d:%02d:%02d" % (eth,etm,ets)
+        }
+      else:
+        status = {
+          "Status": "FAILURE", 
+          "Reason": "ICP Installation Status",
+          "UniqueId" : "%s" % self.bootStackId,
+          "Data" : "ICP installation elapsed time: %d:%02d:%02d" % (eth,etm,ets)
+        }
+      #endIf
+      
+      TR.info(methodName,"Signaling: %s with status: %s" % (self.installCompletedEventURL,status))
+      r = requests.put(self.installCompletedEventURL,json=status)
+      TR.info(methodName,"Install completed signal sent. Return status: %s" % r.status_code)
+    except Exception, e:
+      TR.error(methodName,"Exception: %s" % e, e)
+      self.rc = 1
+    #endTry
+  #endDef
+  
+  
   def main(self,argv):
     """
       Main does command line argument processing, sets up trace and then kicks off the methods to
@@ -2142,15 +2082,7 @@ class Bootstrap(object):
       if (trace):
         TR.info(methodName,"BOOT0102I Tracing with specification: '%s' to log file: '%s'" % (trace,logFile))
       #endIf
-      
-      rootStackId = cmdLineArgs.get('root-stackid')
-      if (not rootStackId):
-        raise MissingArgumentException("The root stack ID (--root-stackid) must be provided.")
-      #endIf
-
-      self.rootStackId = rootStackId
-      TR.info(methodName,"Root stack ID: %s" % rootStackId)
-      
+            
       rootStackName = cmdLineArgs.get('stack-name')
       if (not rootStackName):
         raise MissingArgumentException("The root stack name (--stack-name) must be provided.")
@@ -2182,13 +2114,9 @@ class Bootstrap(object):
       
       self.role = role
       TR.info(methodName,"Node role: %s" % role)
-      
-      # Need to wait for the root stack to be fully deployed to get its outputs for
-      # the introspection of all the child stacks.
-      self.waitForStackStatus(rootStackId,desiredStatus='CREATE_COMPLETE')
-      
+            
       # Finish off the initialization of the bootstrap class instance
-      self._init(rootStackId,rootStackName,bootStackId)
+      self._init(rootStackName,bootStackId)
       
       # Using Route53 DNS server rather than /etc/hosts
       # WARNING - Discovered the hard way that the installation overwrites the /etc/hosts file
@@ -2216,7 +2144,7 @@ class Bootstrap(object):
       
       # Add Route53 DNS aliases for the proxy ELB
       # TODO: Leave this commented out until we figure out how to delete the entry when the stack is deleted.
-      #self.addRoute53Aliases(self.ApplicationDomains, self.getProxyELBDNSName(), self.getProxyELBHostedZoneId())
+      #self.addRoute53Aliases(self.ApplicationDomains, self.ProxyNodeLoadBalancerName, self.ProxyELBHostedZoneID)
       
       # set vm.max_map_count on all cluster members
       setMaxMapCountPlaybookPath = os.path.join(self.home,"playbooks", "set-vm-max-mapcount.yaml")
@@ -2254,6 +2182,9 @@ class Bootstrap(object):
       
       # Install of Cloudctl needs to happen after ICP is installed and running. 
       self.installCloudctl()
+      
+      # Install and configure Helm
+      self.installHelm()
     
     except ExitException:
       pass # ExitException is used as a "goto" end of program after emitting help info
@@ -2267,33 +2198,43 @@ class Bootstrap(object):
       try:
         self._deleteSSMParameters()
       
-        # Copy the deployment logs in self.logsHome and icpHome/logs to the S3 bucket for logs.
-        self.exportLogs(self.ICPDeploymentLogsBucketName,self.rootStackName,self.logsHome)
+        # Copy icpHome/logs to the S3 bucket for logs.
         self.exportLogs(self.ICPDeploymentLogsBucketName,self.rootStackName,"%s/cluster/logs" % self.icpHome)
       except Exception, e:
         TR.error(methodName,"Exception: %s" % e, e)
         self.rc = 1
       #endTry
 
-      
+   
       endTime = Utilities.currentTimeMillis()
       elapsedTime = (endTime - beginTime)/1000
       etm, ets = divmod(elapsedTime,60)
       eth, etm = divmod(etm,60) 
 
+   
       if (self.rc == 0):
         TR.info(methodName,"BOOT0103I END Boostrap AWS ICP Quickstart.  Elapsed time (hh:mm:ss): %d:%02d:%02d" % (eth,etm,ets))
       else:
         TR.info(methodName,"BOOT0104I FAILED END Boostrap AWS ICP Quickstart.  Elapsed time (hh:mm:ss): %d:%02d:%02d" % (eth,etm,ets))
       #endIf
       
+      try:
+        # Copy the bootstrap logs to the S3 bucket for logs.
+        self.exportLogs(self.ICPDeploymentLogsBucketName,self.rootStackName,self.logsHome)
+      except Exception, e:
+        TR.error(methodName,"Exception: %s" % e, e)
+        self.rc = 1
+      #endTry
+      
     #endTry
 
+    # Getting 403 from this.  The signal is in boot node stack UserData
+    #self.signalWaitHandle(eth,etm,ets)
 
     if (TR.traceFile):
       TR.closeTraceLog()
     #endIf
-
+    
     sys.exit(self.rc)
   #endDef
 

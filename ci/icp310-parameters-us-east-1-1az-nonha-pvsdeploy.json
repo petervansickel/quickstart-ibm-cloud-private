@@ -5,7 +5,7 @@
   },
   {
     "ParameterKey": "AvailabilityZones",
-    "ParameterValue": "us-west-1b"
+    "ParameterValue": "us-east-1f"
   },
   {
     "ParameterKey": "ApplicationDomains",
@@ -17,15 +17,7 @@
   },
   {
     "ParameterKey": "CFNTemplateVersion",
-    "ParameterValue": "0.9.3"
-  },
-  {
-    "ParameterKey": "ClusterPKIBucketName",
-    "ParameterValue": "aws-icp-quickstart-us-west-1"
-  },
-  {
-    "ParameterKey": "ClusterPKIRootPath",
-    "ParameterValue": "pki/mycluster.example.com"    
+    "ParameterValue": "0.9.4"
   },
   {
     "ParameterKey": "CustomArtifactsPath",
@@ -37,11 +29,11 @@
   },
   {
     "ParameterKey": "ExternalSSHLocation",
-    "ParameterValue": "108.39.252.97/32"
+    "ParameterValue": "70.63.131.132/32"
   },
   {
     "ParameterKey": "ICPArchiveBucketName",
-    "ParameterValue": "icp-3-1-0-us-west-1"
+    "ParameterValue": "icp-3-1-0-us-east-1"
   },
   {
     "ParameterKey": "ICPArchivePath",
@@ -49,19 +41,19 @@
   },
   {
     "ParameterKey": "ICPBootNodeScriptPackagePath",
-    "ParameterValue": "scripts/aws-icp-bootstrap-v0.9.3.zip"
+    "ParameterValue": "scripts/aws-icp-bootstrap-v0.9.4.zip"
   },
   {
     "ParameterKey": "ICPClusterNodeScriptPackagePath",
-    "ParameterValue": "scripts/aws-icp-nodeinit-v0.9.3.zip"
+    "ParameterValue": "scripts/aws-icp-nodeinit-v0.9.4.zip"
   },
   {
     "ParameterKey": "ICPDeploymentLogsBucketName",
-    "ParameterValue": "aws-icp-quickstart-logs-us-west-1"
+    "ParameterValue": "aws-icp-quickstart-logs-us-east-1"
   },
   {
     "ParameterKey": "ICPScriptBucketName",
-    "ParameterValue": "aws-icp-quickstart-us-west-1"
+    "ParameterValue": "aws-icp-quickstart-us-east-1"
   },
   {
     "ParameterKey": "ICPVersion",
@@ -81,7 +73,7 @@
   },
   {
     "ParameterKey": "KeyName",
-    "ParameterValue": "pvs_key_us_west_1"
+    "ParameterValue": "pvs_key_us_east_1"
   },
   {
     "ParameterKey": "ManagementNodeCount",
