@@ -26,9 +26,6 @@ Metadata:
       - Label:
           default: Deployment Artifact Bucket Parameters
         Parameters:
-          - ICPArchiveBucketName
-          - ICPArchivePath
-          - DockerInstallBinaryPath
           - ICPScriptBucketName
           - ICPClusterNodeScriptPackagePath
           - ICPDeploymentLogsBucketName
@@ -46,20 +43,11 @@ Metadata:
       - Label:
           default: Network Parameters
         Parameters:
-          - ExternalSSHSecurityGroup
           - InternalICPSecurityGroup
           - InternalSSHSecurityGroup
 
     ParameterLabels:
       # Some attempt has been made to keep this list in aphabetical order
-      DockerInstallBinaryPath:
-        default: Docker Install Binary Path
-      ExternalSSHSecurityGroup:
-        default: External SSH Security Group
-      ICPArchiveBucketName:
-        default: ICP Archive Bucket Name
-      ICPArchivePath:
-        default: ICP Archive Path
       ICPClusterNodeScriptPackagePath:
         default: ICP Cluster Node Script Package Path
       ICPDeploymentLogsBucketName:
@@ -95,26 +83,6 @@ Parameters:
       List of Availability Zones to use for the worker node auto-scaling group.
     Type: String
 
-  DockerInstallBinaryPath:
-    Description: >-
-      The path to the Docker install binary in the ICP bucket.
-    Type: String
-
-  ExternalSSHSecurityGroup:
-    Description: >-
-      ExternalSSHSecurityGroup resource ID from the parant stack
-    Type: String
-
-  ICPArchiveBucketName:
-    Description: >-
-      The name of the S3 bucket where the ICP install archive and Docker install binary is located.
-    Type: String
-
-  ICPArchivePath:
-    Description: >-
-      The path to the ICP install archive in the ICP bucket.
-    Type: String
-
   ICPClusterNodeScriptPackagePath:
     Description: >-
       The path in the ICP bootstrap S3 bucket to the ICP cluster node script package (zip) file.  Cluster nodes are master, proxy, worker, management, vulnerability advisor.
@@ -136,14 +104,19 @@ Parameters:
       IBM Cloud Private deployment.
     Type: String
 
-  ICPScriptBucketName:
+  ICPS3KeyPrefix:
     Description: >-
-      The name of the S3 bucket where the ICP boostrap script packages are located.
+      The S3 key prefix (context root) for IBM Cloud Private installation artifacts in the ICPScriptBucketName S3 bucket.  (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
     Type: String
 
-  InstallFromConfigSet:
+  ICPScriptBucketName:
     Description: >-
-      Variable used to determine when the installation images get copied to the ICP boot node.  If 'Yes', then the installation images are copied at the time the ICP boot node is instantiated using the BaseInstall config set defined in the instance.  If 'No', then the installation images are copied to the boot node using a pre-signed S3 URL as part of the bootstrap script.
+      The name of the S3 bucket where the ICP boostrap script packages are located. (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
+    Type: String
+
+  ICPVersion:
+    Description: >-
+      The version of ICP to be deployed. Provided by the parent stack.  Used in the nodeinit script to determine what Docker binary to install.
     Type: String
 
   InternalICPSecurityGroup:
@@ -240,7 +213,6 @@ Resources:
           type: S3
           roleName: !Ref ICPNodeRole
           buckets:
-            - !Ref ICPArchiveBucketName
             - !Ref ICPScriptBucketName
 
       AWS::CloudFormation::Init:
@@ -249,8 +221,6 @@ Resources:
             - InstallPackages
             - StackPropertiesFile
             - ICPNodeInitScripts
-          DockerInstall:
-            - DockerInstallBinary
 
         InstallPackages:
           packages:
@@ -260,27 +230,17 @@ Resources:
               nfs-common: []
               socat: []
               inetutils-traceroute: []
+              python-yaml: []
             python:
               pycryptodome: []
               boto3: []
               requests: []
 
-        DockerInstallBinary:
-          # The Docker install executable gets copied down to all nodes
-          files:
-            /root/docker/icp-install-docker.bin:
-              source: !Sub
-                - https://${ArchiveBucketName}.s3.amazonaws.com/${InstallExecutable}
-                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
-              mode: '000554'
-              owner: root
-              group: root
-
         ICPNodeInitScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${ScriptPackagePath}
-             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
 
         StackPropertiesFile:
           files:
@@ -305,7 +265,8 @@ Resources:
           - !Ref AWS::Region
           - Ubuntu16
 
-      AssociatePublicIpAddress: true
+      # TBD - Is this needed.  These are on a private subnet.
+      #AssociatePublicIpAddress: true
 
       UserData:
         Fn::Base64:
@@ -318,10 +279,6 @@ Resources:
             pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
             # Install the files and packages from the metadata
             /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource WorkerNodeLaunchConfiguration --configsets ICPBootstrap --region ${AWS::Region}
-            # Conditionally get docker binary
-            if [ "${InstallFromConfigSet}" = "Yes" ]; then
-              /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ProxyNodeLaunchConfiguration --configsets DockerInstall --region ${AWS::Region}
-            fi
             # pip install pyopenssl (so far, not needed on cluster nodes)
             pip install docker
             chmod +x /root/*.sh

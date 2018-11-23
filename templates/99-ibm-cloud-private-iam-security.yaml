@@ -6,6 +6,11 @@ Description: >-
 
 Parameters:
 
+  ClusterPKIBucketName:
+    Description: >-
+      The S3 bucket where the cluster PKI artifacts are located. If not provided, self-signed PKI artifacts will be created and used.
+    Type: String
+
   ExternalSSHLocation:
     Description: >-
       The ExternalSSHLocation resource ID from the parent template.
@@ -13,12 +18,13 @@ Parameters:
 
   IBMCloudPrivateVPC:
     Description: >-
-      The IBMCloudePrivateVPC resource ID from the parent template.
+      The IBMCloudPrivateVPC resource ID from the parent template.
     Type: String
 
   ICPArchiveBucketName:
     Description: >-
-      The name of the S3 bucket where the ICP install archive and Docker install binary is located.
+      The name of the S3 bucket where the ICP install archive and Docker install binary is located.  For the QuickStart this gets a well known default value
+      with a root of "ibm-cloud-private", a dash (-), followed by the region name, e.g., ibm-cloud-private-us-east-1. The bucket name is needed to establish permission to access the ICP and Docker installation archives.
     Type: String
 
   ICPDeploymentLogsBucketName:
@@ -373,6 +379,16 @@ Resources:
                   - s3:PutObject
                 Resource: !Sub arn:aws:s3:::${ICPDeploymentLogsBucketName}/*
                 Effect: Allow
+                # ClusterPKIBucketName is the bucket holding PKI key and cert
+                # for CA signed PKI artifacts to use in the deployment.
+              - Action:
+                  - s3:ListBucket
+                Resource: !Sub arn:aws:s3:::${ClusterPKIBucketName}
+                Effect: Allow
+              - Action:
+                  - s3:GetObject
+                Resource: !Sub arn:aws:s3:::${ClusterPKIBucketName}/*
+                Effect: Allow
 
           # From here on, the policies are needed for the bootstrap scripts
           # to access various classes of resources to prepare for and configure
@@ -458,7 +474,7 @@ Resources:
                 Resource: '*'
 
 
-  # WARNING: For as yet unknown reasons it the profile and role must be treated as a pair when configuring a LaunchConfiguration. The deployment fails when you do something like define the MasterNodeProfile and use the NodeRole with it.  Need to investigate further. Hence each profile has a corresponding role.
+  # WARNING: For as yet unknown reasons, the profile and role must be treated as a pair when configuring a LaunchConfiguration. The deployment fails when you do something like define the MasterNodeProfile and use the NodeRole with it.  Need to investigate further. Hence each profile has a corresponding role.
 
   # WARNING: An InstanceProfile can have only 1 Role
   BootNodeProfile:

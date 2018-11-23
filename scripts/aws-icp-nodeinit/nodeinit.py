@@ -1,20 +1,6 @@
 #!/usr/bin/python
-###############################################################################
-# Licensed Material - Property of IBM
-# 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2018 - All Rights Reserved.
-# US Government Users Restricted Rights - Use, duplication or disclosure
-# restricted by GSA ADP Schedule Contract with IBM Corp.
-#
-# DISCLAIMER:
-# The following source code is sample code created by IBM Corporation.
-# This sample code is provided to you solely for the purpose of assisting you
-# in the  use of  the product. The code is provided 'AS IS', without warranty or
-# condition of any kind. IBM shall not be liable for any damages arising out of
-# your use of the sample code, even if IBM has been advised of the possibility
-# of such damages.
-###############################################################################
 
-'''
+"""
 Created on 24 JUN 2018
 
 @author: Peter Van Sickel pvs@us.ibm.com
@@ -28,7 +14,7 @@ Description:
 History:
   24 JUN 2018 - pvs - Initial creation.
 
-'''
+"""
 
 import sys, os.path
 from subprocess import call
@@ -39,6 +25,7 @@ import shutil
 import time
 import docker
 import requests
+import yaml
 from yapl.utilities.Trace import Trace, Level
 import yapl.utilities.Utilities as Utilities
 from yapl.exceptions.Exceptions import ExitException
@@ -543,34 +530,85 @@ class NodeInit(object):
   #endDef
   
  
-  def getInstallImages(self):
+  def loadInstallMap(self, version=None, region=None):
+    """
+      Return a dictionary that holds all the installation image information needed to 
+      retrieve the installation images from S3. 
+      
+      Which install images to use is driven by the ICP version.
+      Which S3 bucket to use is driven by the AWS region of the deployment.
+      
+      The source of the information is icp-install-artifact-map.yaml packaged with the
+      boostrap script package.  The yaml file holds the specifics regarding which bucket
+      to use and the S3 path for the ICP and Docker images as well as the Docker image
+      name and the inception commands to use for the installation.          
+    """
+    methodName = "loadInstallMap"
+    
+    if (not version):
+      raise MissingArgumentException("The ICP version must be provided.")
+    #endIf
+    
+    if (not region):
+      raise MissingArgumentException("The AWS region must be provided.")
+    #endIf
+        
+    installDocPath = os.path.join(self.home,"yaml","icp-install-artifact-map.yaml")
+    
+    with open(installDocPath,'r') as installDocFile:
+      installDoc = yaml.load(installDocFile)
+    #endWith
+    
+    if (TR.isLoggable(Level.FINEST)):
+      TR.finest(methodName,"Install doc: %s" % installDoc)
+    #endIf
+    
+    installMap = installDoc.get(version)
+    if (not installMap):
+      raise ICPInstallationException("No ICP or Docker installation images defined for ICP version: %s" % version)
+    #endIf
+    
+    buckets = installDoc.get('s3-buckets')
+    
+    if (TR.isLoggable(Level.FINEST)):
+      TR.finest(methodName,"S3 installation image buckets: %s" % buckets)
+    #endIf
+    
+    regionBucket = buckets.get(region)
+    if (not regionBucket):
+      raise ICPInstallationException("No S3 bucket for installation images defined for region: %s" % region)
+    #endIf
+  
+      # The version is needed to get to the proper folder in the region bucket.
+    installMap['version'] = version  
+    installMap['s3bucket'] = regionBucket
+    
+    return installMap
+    
+  #endDef
+  
+  
+  def getInstallImages(self, installMap):
     """
       Create a presigned URL and use it to download the Docker image from the S3
-      bucket where the install images are stored.
+      bucket where the image is stored.  Each version of ICP is tested with a specific
+      version of Docker, so it is best to use the Docker that is released with ICP.
       
-      CloudFormation input parameters used in this method:
-        ICPArchiveBucketName
-        DockerInstallBinaryPath 
-        
-        Docker binary gets downloaded to: /root/docker/icp-install-docker.bin
-        
-      NOTE: If the image files already exist, then nothing is done.  (The image files may be 
-      copied to the desired location in the local file system using a ConfigSet as part of the
-      instantiation of the boot node in the CloudFormation template.  
+      The cluster nodes only need to get the Docker image, where the boot node gets
+      the ICP install image as well.
       
-      Using a pre-signed URL is needed when the deployer does not have direct permission to 
-      access to the installation image bucket.
+      Docker binary gets downloaded to: /root/docker/icp-install-docker.bin
+        
+      Using a pre-signed URL is needed when the deployer does not have access to the installation
+      image bucket.
     """
     methodName = "getInstallImages"
     
-    dockerBinaryPath = "/root/docker/icp-install-docker.bin"
-    
-    if (not os.path.isfile(dockerBinaryPath)):
-      TR.info(methodName,"Getting object: %s from bucket: %s using a pre-signed URL." % (self.DockerInstallBinaryPath,self.ICPArchiveBucketName))
-      self.getS3Object(bucket=self.ICPArchiveBucketName,s3Path=self.DockerInstallBinaryPath,destPath=dockerBinaryPath)
-    else:
-      TR.info(methodName,"Docker installation binary already exists: %s" % dockerBinaryPath)
-    #endIf
+    dockerLocalPath = "/root/docker/icp-install-docker.bin"
+    dockerS3Path = "%s/%s" % (installMap['version'],installMap['docker-install-binary'])
+    bucket = installMap['s3bucket']
+    TR.info(methodName,"Getting object: %s from bucket: %s using a pre-signed URL." % (dockerS3Path,bucket))
+    self.getS3Object(bucket=bucket, s3Path=dockerS3Path, destPath=dockerLocalPath)
   #endDef
   
   
@@ -849,7 +887,9 @@ class NodeInit(object):
       # Additional initialization of the instance.
       self._init(stackId)
 
-      self.getInstallImages()
+      # Get the appropriate docker image
+      self.installMap = self.loadInstallMap(version=self.ICPVersion, region=self.region)
+      self.getInstallImages(self.installMap)
           
       # The sleep() is a hack to give bootnode time to do get its act together.
       # PVS: I've run into rare cases where it appears that the the cluster nodes

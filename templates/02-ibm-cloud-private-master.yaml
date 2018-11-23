@@ -26,9 +26,6 @@ Metadata:
       - Label:
           default: Deployment Artifact Bucket Parameters
         Parameters:
-          - ICPArchiveBucketName
-          - ICPArchivePath
-          - DockerInstallBinaryPath
           - ICPScriptBucketName
           - ICPClusterNodeScriptPackagePath
           - ICPDeploymentLogsBucketName
@@ -53,14 +50,8 @@ Metadata:
 
     ParameterLabels:
       # Some attempt has been made to keep this list in aphabetical order
-      DockerInstallBinaryPath:
-        default: Docker Install Binary Path
       ExternalSSHSecurityGroup:
         default: External SSH Security Group
-      ICPArchiveBucketName:
-        default: ICP Archive Bucket Name
-      ICPArchivePath:
-        default: ICP Archive Path
       ICPClusterNodeScriptPackagePath:
         default: ICP Cluster Node Script Package Path
       ICPDeploymentLogsBucketName:
@@ -97,11 +88,6 @@ Parameters:
       List of Availability Zones to use for the master node auto-scaling group.  The form of the value is intended to be a comma delimited string of Availability Zones.
     Type: String
 
-  DockerInstallBinaryPath:
-    Description: >-
-      The path to the Docker install binary in the ICP bucket.
-    Type: String
-
   EFSDNSName:
     Description: >-
       The EFS server public DNS name providing shared storage used by the master nodes for the various mount points they need to share, i.e., docker registry, kubernetes audit log, ICP audit log.  Used by the master node initialization script when there is more than 1 master node.
@@ -115,16 +101,6 @@ Parameters:
   IBMCloudPrivateVPC:
     Description: >-
       The VPC resource ID for the IBMCloudPrivateVPC deployed by the root template.
-    Type: String
-
-  ICPArchiveBucketName:
-    Description: >-
-      The name of the S3 bucket where the ICP install archive and Docker install binary is located.
-    Type: String
-
-  ICPArchivePath:
-    Description: >-
-      The path to the ICP install archive in the ICP bucket.
     Type: String
 
   ICPClusterNodeScriptPackagePath:
@@ -142,14 +118,19 @@ Parameters:
       ICPMasterSecurityGroup resource ID from the parent stack
     Type: String
 
+  ICPS3KeyPrefix:
+    Description: >-
+      The S3 key prefix (context root) for IBM Cloud Private installation artifacts in the ICPScriptBucketName S3 bucket.  (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
+    Type: String
+
   ICPScriptBucketName:
     Description: >-
       The name of the S3 bucket where the ICP boostrap script packages are located.
     Type: String
 
-  InstallFromConfigSet:
+  ICPVersion:
     Description: >-
-      Variable used to determine when the installation images get copied to the ICP boot node.  If 'Yes', then the installation images are copied at the time the ICP boot node is instantiated using the BaseInstall config set defined in the instance.  If 'No', then the installation images are copied to the boot node using a pre-signed S3 URL as part of the bootstrap script.
+      The version of ICP to be deployed. Provided by the parent stack.  Used in the nodeinit script to determine what Docker binary to install.
     Type: String
 
   InternalICPSecurityGroup:
@@ -391,7 +372,6 @@ Resources:
           type: S3
           roleName: !Ref MasterNodeRole
           buckets:
-            - !Ref ICPArchiveBucketName
             - !Ref ICPScriptBucketName
 
       AWS::CloudFormation::Init:
@@ -400,8 +380,6 @@ Resources:
             - InstallPackages
             - StackPropertiesFile
             - ICPNodeInitScripts
-          DockerInstall:
-            - DockerInstallBinary
 
         InstallPackages:
           packages:
@@ -411,27 +389,17 @@ Resources:
               nfs-common: []
               socat: []
               inetutils-traceroute: []
+              python-yaml: []
             python:
               pycryptodome: []
               boto3: []
               requests: []
 
-        DockerInstallBinary:
-          # The Docker install executable gets copied down to all nodes
-          files:
-            /root/docker/icp-install-docker.bin:
-              source: !Sub
-                - https://${ArchiveBucketName}.s3.amazonaws.com/${InstallExecutable}
-                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
-              mode: '000554'
-              owner: root
-              group: root
-
         ICPNodeInitScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${ScriptPackagePath}
-             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
 
         StackPropertiesFile:
           files:
@@ -468,10 +436,6 @@ Resources:
             pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
             # Install the ICPBootstrap files and packages from the metadata
             /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource MasterNodeOne --configsets ICPBootstrap --region ${AWS::Region}
-            # Conditionally get docker binary
-            if [ "${InstallFromConfigSet}" = "Yes" ]; then
-              /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource MasterNodeOne --configsets DockerInstall --region ${AWS::Region}
-            fi
             # pip install pyopenssl (so far, not needed on cluster nodes)
             pip install docker
             chmod +x /root/*.sh
@@ -484,6 +448,10 @@ Resources:
           DeviceIndex: "0"
           DeleteOnTermination: true
           SubnetId: !Select [0, !Split [',', !Ref PrivateSubnetIds]]
+          # Next two lines are to debug nodeint.py issues that may
+          # occur prior to configuring ssh from boot to cluster nodes.
+          #SubnetId: !Select [0, !Split [',', !Ref PublicSubnetIds]]
+          #AssociatePublicIpAddress: true
           GroupSet:
             # External access to the master node public ports
             - !Ref ICPMasterSecurityGroup
@@ -491,6 +459,8 @@ Resources:
             - !Ref InternalICPSecurityGroup
             # Boot node access via SSH
             - !Ref InternalSSHSecurityGroup
+            # External access via SSH (only needed for debug)
+            #- !Ref ExternalSSHSecurityGroup
 
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
@@ -518,7 +488,6 @@ Resources:
           type: S3
           roleName: !Ref MasterNodeRole
           buckets:
-            - !Ref ICPArchiveBucketName
             - !Ref ICPScriptBucketName
 
       AWS::CloudFormation::Init:
@@ -527,8 +496,6 @@ Resources:
             - InstallPackages
             - StackPropertiesFile
             - ICPNodeInitScripts
-          DockerInstall:
-            - DockerInstallBinary
 
         InstallPackages:
           packages:
@@ -538,26 +505,17 @@ Resources:
               nfs-common: []
               socat: []
               inetutils-traceroute: []
+              python-yaml: []
             python:
               pycryptodome: []
               boto3: []
-
-        DockerInstallBinary:
-          # The Docker install executable gets copied down to all nodes
-          files:
-            /root/docker/icp-install-docker.bin:
-              source: !Sub
-                - https://${ArchiveBucketName}.s3.amazonaws.com/${InstallExecutable}
-                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
-              mode: '000554'
-              owner: root
-              group: root
+              requests: []
 
         ICPNodeInitScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${ScriptPackagePath}
-             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
 
         StackPropertiesFile:
           files:
@@ -597,10 +555,6 @@ Resources:
             pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
             # Install the ICPBootstrap files and packages from the metadata
             /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource MasterNodeTwo --configsets ICPBootstrap --region ${AWS::Region}
-            # Conditionally get docker binary
-            if [ "${InstallFromConfigSet}" = "Yes" ]; then
-              /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource MasterNodeTwo --configsets DockerInstall --region ${AWS::Region}
-            fi
             # pip install pyopenssl (so far, not needed on cluster nodes)
             pip install docker
             chmod +x /root/*.sh
@@ -651,7 +605,6 @@ Resources:
           type: S3
           roleName: !Ref MasterNodeRole
           buckets:
-            - !Ref ICPArchiveBucketName
             - !Ref ICPScriptBucketName
 
       AWS::CloudFormation::Init:
@@ -660,8 +613,6 @@ Resources:
             - InstallPackages
             - StackPropertiesFile
             - ICPNodeInitScripts
-          DockerInstall:
-            - DockerInstallBinary
 
         InstallPackages:
           packages:
@@ -671,26 +622,17 @@ Resources:
               nfs-common: []
               socat: []
               inetutils-traceroute: []
+              python-yaml: []
             python:
               pycryptodome: []
               boto3: []
-
-        DockerInstallBinary:
-          # The Docker install executable gets copied down to all nodes
-          files:
-            /root/docker/icp-install-docker.bin:
-              source: !Sub
-                - https://${ArchiveBucketName}.s3.amazonaws.com/${InstallExecutable}
-                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
-              mode: '000554'
-              owner: root
-              group: root
+              requests: []
 
         ICPNodeInitScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${ScriptPackagePath}
-             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
 
         StackPropertiesFile:
           files:
@@ -730,10 +672,6 @@ Resources:
             pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
             # Install the ICPBootstrap files and packages from the metadata
             /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource MasterNodeThree --configsets ICPBootstrap --region ${AWS::Region}
-            # Conditionally get docker binary
-            if [ "${InstallFromConfigSet}" = "Yes" ]; then
-              /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource MasterNodeThree --configsets DockerInstall --region ${AWS::Region}
-            fi
             # pip install pyopenssl (so far, not needed on cluster nodes)
             pip install docker
             chmod +x /root/*.sh
@@ -743,8 +681,6 @@ Resources:
 
       NetworkInterfaces:
         - Description: Primary master node network interface
-          GroupSet:
-            - !Ref ExternalSSHSecurityGroup
           DeviceIndex: "0"
           DeleteOnTermination: true
           SubnetId: !If

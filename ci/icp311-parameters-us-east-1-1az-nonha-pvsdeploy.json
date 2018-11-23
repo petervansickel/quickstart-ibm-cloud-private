@@ -1,11 +1,11 @@
 [
   {
     "ParameterKey": "AvailabilityZoneCount",
-    "ParameterValue": "3"
+    "ParameterValue": "1"
   },
   {
     "ParameterKey": "AvailabilityZones",
-    "ParameterValue": "us-east-1c,us-east-1d,us-east-1f"
+    "ParameterValue": "us-east-1f"
   },
   {
     "ParameterKey": "ApplicationDomains",
@@ -24,6 +24,10 @@
     "ParameterValue": "73.225.52.165/32"
   },
   {
+    "ParameterKey": "QSS3BucketName",
+    "ParameterValue": "icp-3-1-0-us-east-1"
+  },
+  {
     "ParameterKey": "ICPBootNodeScriptPackagePath",
     "ParameterValue": "scripts/aws-icp-bootstrap.zip"
   },
@@ -36,6 +40,10 @@
     "ParameterValue": "aws-icp-quickstart-logs-us-east-1"
   },
   {
+    "ParameterKey": "ICPVersion",
+    "ParameterValue": "3.1.1"
+  },
+  {
     "ParameterKey": "KeyFilePath",
     "ParameterValue": "keys/additional-keys"
   },
@@ -45,7 +53,7 @@
   },
   {
     "ParameterKey": "ManagementNodeCount",
-    "ParameterValue": "3"
+    "ParameterValue": "1"
   },
   {
     "ParameterKey": "ManagementNodeInstanceType",
@@ -53,7 +61,7 @@
   },
   {
     "ParameterKey": "MasterNodeCount",
-    "ParameterValue": "3"
+    "ParameterValue": "1"
   },
   {
     "ParameterKey": "MasterNodeInstanceType",
@@ -61,11 +69,11 @@
   },
   {
     "ParameterKey": "PrivateSubnets",
-    "ParameterValue": "10.10.10.0/24, 10.10.11.0/24, 10.10.12.0/24"
+    "ParameterValue": "10.10.10.0/24"
   },
   {
     "ParameterKey": "ProxyNodeCount",
-    "ParameterValue": "3"
+    "ParameterValue": "1"
   },
   {
     "ParameterKey": "ProxyNodeInstanceType",
@@ -73,7 +81,7 @@
   },
   {
     "ParameterKey": "PublicSubnets",
-    "ParameterValue": "10.10.20.0/24, 10.10.21.0/24, 10.10.22.0/24"
+    "ParameterValue": "10.10.20.0/24"
   },
   {
     "ParameterKey": "QSS3BucketName",
@@ -89,7 +97,7 @@
   },
   {
     "ParameterKey": "WorkerNodeCount",
-    "ParameterValue": "9"
+    "ParameterValue": "2"
   },
   {
     "ParameterKey": "WorkerNodeInstanceType",

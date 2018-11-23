@@ -1,23 +1,9 @@
-###############################################################################
-# Licensed Material - Property of IBM
-# 5724-I63, 5724-H88, (C) Copyright IBM Corp. 2016 - All Rights Reserved.
-# US Government Users Restricted Rights - Use, duplication or disclosure
-# restricted by GSA ADP Schedule Contract with IBM Corp.
-#
-# DISCLAIMER:
-# The following source code is sample code created by IBM Corporation.
-# This sample code is provided to you solely for the purpose of assisting you
-# in the  use of  the product. The code is provided 'AS IS', without warranty or
-# condition of any kind. IBM shall not be liable for any damages arising out of 
-# your use of the sample code, even if IBM has been advised of the possibility 
-# of such damages.
-###############################################################################
 
-'''
+"""
 Created on Dec 7, 2016
 
 @author: Peter Van Sickel pvs@us.ibm.com
-'''
+"""
 
 class NotImplementedException(Exception):
   """
@@ -62,6 +48,15 @@ class InvalidArgumentException(Exception):
   """
     InvalidArgumentException is raised when the value of an argument provided is not
     "valid" for some reason, e.g., it is out of range or an incorrect type.
+  """
+#endClass
+
+
+class InvalidConfigurationException(Exception):
+  """
+    An InvalidConfigurationException is raised when it is determined that a given configuration is invalid.
+    This can be used for any kind of configuration and is intended to be used for any kind of configuration
+    issue.
   """
 #endClass
 

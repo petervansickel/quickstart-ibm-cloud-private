@@ -16,9 +16,7 @@ Metadata:
       - Label:
           default: Deployment control parameters
         Parameters:
-          - CFNTemplateVersion
           - InceptionTimeout
-          - InstallICPFixpack
 
       - Label:
           default: IBM Cloud Private configuration parameters
@@ -33,25 +31,15 @@ Metadata:
       - Label:
           default: Deployment artifact bucket parameters
         Parameters:
+          - ClusterPKIBucketName
+          - ClusterPKIRootPath
           - CustomArtifactsPath
-          - DockerInstallBinaryPath
-          - ICPArchiveBucketName
-          - ICPArchivePath
+          - ICPArchiveBucketRootName
           - ICPBootNodeScriptPackagePath
           - ICPClusterNodeScriptPackagePath
           - ICPDeploymentLogsBucketName
-          - ICPScriptBucketName
-          - S3ICPFixpackExecutablePath
-          - S3ICPInceptionFixpackPath
-
-      - Label:
-          default: Installation parameters
-        Parameters:
-          - FixpackFileName
-          - FixpackInceptionImageName
-          - FixpackInstallCommandString
-          - InceptionImageName
-          - InceptionInstallCommandString
+          - QSS3BucketName
+          - QSS3KeyPrefix
 
       - Label:
           default: EC2 instance parameters
@@ -60,7 +48,7 @@ Metadata:
           - MasterNodeInstanceType
           - ManagementNodeInstanceType
           - ProxyNodeInstanceType
-          - VulnerabilityAdvisorInstanceType
+          - VulnerabilityAdvisorNodeInstanceType
           - WorkerNodeInstanceType
 
       - Label:
@@ -82,19 +70,17 @@ Metadata:
       - Label:
           default: Application workload configuration
         Parameters:
-          - ApplicationDomain
+          - ApplicationDomains
           - ApplicationStorageMountPoint
 
     ParameterLabels:
       # Some attempt has been made to keep this list in aphabetical order
-      ApplicationDomain:
-        default: Application domain
+      ApplicationDomains:
+        default: Application domains
       ApplicationStorageMountPoint:
         default: Application storage mount point
       BootNodeInstanceType:
         default: Boot node EC2 instance type
-      CFNTemplateVersion:
-        default: CloudFormation template version
       ClusterCADomain:
         default: Cluster Certificate Authority domain
       ClusterCIDR:
@@ -103,10 +89,12 @@ Metadata:
         default: Cluster domain
       ClusterName:
         default: Cluster name
+      ClusterPKIBucketName:
+        default: Cluster PKI bucket name
+      ClusterPKIRootPath:
+        default: Cluster PKI root path
       CustomArtifactsPath:
         default: Custom artifacts path
-      DockerInstallBinaryPath:
-        default: Docker install binary path
       ExcludedMgmtServices:
         default: Excluded management services
       ExternalApplicationLocation:
@@ -115,26 +103,16 @@ Metadata:
         default: External ICP admin location
       ExternalSSHLocation:
         default: External SSH location
-      FixpackIntallCommandString:
-        default: Fixpack install command string
-      FixpackFileName:
-        default: Fixpack file name
-      ICPArchiveBucketName:
-        default: ICP archive bucket name
-      ICPArchivePath:
-        default: ICP archive path
+      ICPArchiveBucketRootName:
+        default: ICP archive bucket root name
       ICPBootNodeScriptPackagePath:
         default: ICP boot node script package path
       ICPClusterNodeScriptPackagePath:
         default: ICP cluster node script package path
       ICPDeploymentLogsBucketName:
         default: ICP deployment logs bucket name
-      ICPScriptBucketName:
-        default: ICP script bucket name
       InceptionTimeout:
         default: Inception timeout
-      InstallICPFixpack:
-        default: Install ICP fixpack
       KeyFilePath:
         default: Key file path
       KeyName:
@@ -151,18 +129,18 @@ Metadata:
         default: Proxy node EC2 instance type
       ProxyNodeCount:
         default: Proxy node count
+      QSS3BucketName:
+        default: QuickStart S3 bucket name
+      QSS3KeyPrefix:
+        default: QuickStart S3 key prefix
       ResourceOwner:
         default: Resource owner
-      S3ICPFixpackExecutablePath:
-        default: ICP fixpack executable path
-      S3ICPInceptionFixpackPath:
-        default: ICP inception fixpack path
       ServiceCIDR:
         default: ICP service network CIDR
       VPCName:
         default: Virtual private cloud name
-      VulnerabilityAdvisorInstanceType:
-        default: Vulnerability Advisor EC2 instance type
+      VulnerabilityAdvisorNodeInstanceType:
+        default: Vulnerability Advisor node EC2 instance type
       VulnerabilityAdvisorNodeCount:
         default: Vulnerability Advisor node count
       WorkerNodeInstanceType:
@@ -177,7 +155,7 @@ Parameters:
     Description: >-
       A list of fully qualified domain names used for applications.  Each name gets an alias record in the Route53 DNS to the Proxy node Elastic Load Balancer public DNS name. The ApplicationDomains must be consistent with the VPCDomain. The type is String to allow passing to BootNodeStack. The string is a comma delimited list.
     Type: String
-    Default: myapp.example.com
+    Default: myapps.example.com
 
   ApplicationStorageMountPoint:
     Description: >-
@@ -200,7 +178,7 @@ Parameters:
   # List<AWS::EC2::AvailabilityZone::Name> breaks stack parameters :(
   AvailabilityZones:
     Description: >-
-      List of Availability Zones to use for the subnets in the VPC. To get the names of Availability Zones available to you using the AWS CLI: aws ec2 describe-availability-zones
+      List of Availability Zones to use for the subnets in the VPC. Be careful to provide zones that support the instance types of the ICP cluster members. To get the names of Availability Zones available to you using the AWS CLI: aws ec2 describe-availability-zones
     Type: String
 
   BootNodeInstanceType:
@@ -215,11 +193,6 @@ Parameters:
       - m5d.2xlarge
     ConstraintDescription: Must be a valid EC2 instance type.
 
-  CFNTemplateVersion:
-    Description: >-
-      The Cloud Formation template version to use for the deployment.  The version string provided is used to determine the S3 path for the templates in the ICP script bucket (ICPScriptBucketName) templates folder.
-    Type: String
-
   # TBD: Delete this in favor of using the ClusterName.VPCDomain for the
   # cluster CA domain.
   ClusterCADomain:
@@ -230,7 +203,7 @@ Parameters:
 
   ClusterCIDR:
     Description: >-
-      The CIDR for the ICP cluster overlay network.  This gets assigned to the network_cidr attribute in config.yaml.  The value provided must be a network that does not conflict with the AWS VPC network.  It also must not conflict with the ICP service overlay network.
+      The CIDR for the ICP cluster overlay network.  This gets assigned to the network_cidr attribute in config.yaml.  The value provided must be a network that does not overlap with the AWS VPC network (VPCCIDR).  It also must not overlap with the ICP service overlay network (SeviceCIDR).
     Type: String
     MinLength: 9
     MaxLength: 18
@@ -273,27 +246,15 @@ Parameters:
 
   ClusterPKIRootPath:
     Description: >-
-      The path in the cluster PKI S3 bucket where the user defined PKI key and certificate files are found.  This is the key and certificate that used for the master node identity.  The CN of the key and certificate must be the same value that is provided in ClusterCADomain.  The extensions on the root path are assumed to be .key and .crt to get the key and certificate files respectively. DO NOT provide a leading / on the path value. If not provided, self-signed PKI artifacts will be created and used.
+      The path in the cluster PKI S3 bucket where the user defined PKI key and certificate files are found.  This is the key and certificate that used for the master node identity.  The CN of the key and certificate must be the same value that is provided in combination of the ClusterName and the VPCDomain. The extensions on the root path are assumed to be .key and .crt to get the key and certificate files respectively. DO NOT provide a leading / on the path value. If not provided, self-signed PKI artifacts will be created and used.
     Type: String
     Default: ''
-
-  # TODO - We can likely eliminate the InceptionTimeout and use only the ICPInstallationTimeout.
-  ICPInstallationTimeout:
-    Description: >-
-      The timeout (in seconds) associated with the installation and configuration of the ICP cluster, from start to finish. The ICPInstallationTimeout must be equal or greater than the InceptionTimeout. The ICPInstallationTimeout needs to be sufficient to allow the bootstrap installation script to complete.  See InceptionTimeout for some guidance on expected installation time.
-    Type: Number
-    Default: 7200
 
   CustomArtifactsPath:
     Description: >-
-      Path to zip archive in the ICP script bucket (ICPScriptBucketName) for an archive of additional artifacts, typically scripts, for ICP cluster administration extracted on the boot node in the root home directory. (Optional)
+      Path to zip archive in the ICP script bucket (QSS3BucketName) for an archive of additional artifacts, typically scripts, for ICP cluster administration extracted on the boot node in the root home directory. (Optional)
     Type: String
     Default: ''
-
-  DockerInstallBinaryPath:
-    Description: >-
-      The path to the Docker install binary in the ICP archive bucket (ICPArchiveBucketName).
-    Type: String
 
   ExcludedMgmtServices:
     Description: >-
@@ -328,7 +289,7 @@ Parameters:
 
   ExternalSSHLocation:
     Description: >-
-      The IP address range that can be used to SSH to the boot node.
+      The network CIDR for IP addresses that can be used to SSH to the boot node. In single user test situations this can be a /32 CIDR.  Additional values can be added post-deployment from the AWS CloudFormation console.
     Type: String
     MinLength: 9
     MaxLength: 18
@@ -337,39 +298,17 @@ Parameters:
     ConstraintDescription: >-
       Must be a valid IP CIDR range of the form x.x.x.x/x.
 
-  FixpackFileName:
+  ICPArchiveBucketRootName:
     Description: >-
-      The name of the fixpack file, e.g., ibm-cloud-private-2.1.0.3-fp1.sh.
-      Do not include a leading / on the path value.
+      The root name of the S3 bucket where the ICP and Docker installation artifacts are located.  For the QuickStart this gets a default (required) value of "ibm-cloud-private". The root name is used to form a full name that includes a dash (-), followed by the region name, e.g., ibm-cloud-private-us-east-1.  A bucket in each region is needed for efficiency of downloading the ICP installation artifacts to the deployed EC2 instances. The bucket name is needed to establish permission to access the ICP and Docker installation artifacts.
     Type: String
-    Default: ''
-
-  FixpackInceptionImageName:
-    Description: >-
-      The name of the inception image used for the ICP installation when the ICP fixpack is to be installed, e.g., ibmcom/icp-inception:2.1.0.3-ee-fp1.
-    Type: String
-    Default: ''
-
-  FixpackInstallCommandString:
-    Description: >-
-      The command string to use when invoking the ICP fixpack installation.
-    Type: String
-    Default: "install -v"
-
-  ICPArchiveBucketName:
-    Description: >-
-      The name of the S3 bucket where the ICP install archive and Docker install binary is located.
-    Type: String
-
-  ICPArchivePath:
-    Description: >-
-      The path to the ICP install archive in the ICP bucket. Do not include a leading / on the path value.
-    Type: String
+    Default: ibm-cloud-private
 
   ICPBootNodeScriptPackagePath:
     Description: >-
       The path in the S3 bucket to the ICP Boot node script package (zip) file. Do not include a leading / on the path value.
     Type: String
+    Default: scripts/aws-icp-bootstrap.zip
 
   ICPClusterNodeScriptPackagePath:
     Description: >-
@@ -377,65 +316,37 @@ Parameters:
       Do not include a leading / on the path value.
       Cluster nodes are master, proxy, worker, management, vulnerability advisor.
     Type: String
+    Default: scripts/aws-icp-nodeinit.zip
 
   ICPDeploymentLogsBucketName:
     Description: >-
       The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
     Type: String
 
-  ICPScriptBucketName:
+  # TODO - We can likely eliminate the InceptionTimeout and use only the ICPInstallationTimeout.
+  ICPInstallationTimeout:
     Description: >-
-      The name of the S3 bucket where the ICP boostrap script packages are located. This bucket is expected to hold the script pacages for the boot node and the cluster nodes.
-    Type: String
-
-  # NOTE - It is best to pass the ICP version explicitly.
-  # The naming of the ICP image does not follow a consistent convention
-  # for version number.
-  # The version number is used to pick up the config.yaml template to use.
-  ICPVersion:
-    Description: >-
-      The version of ICP to be deployed.  The full version must be provided, e.g., 2.1.0.3, 3.1.0.
-    Type: String
-
-  InceptionImageName:
-    Description: >-
-      The name of the inception image to use for the ICP installation.
-    Type: String
-
-  InceptionInstallCommandString:
-    Description: >-
-      The command string to use when invoking the ICP installation.
-    Type: String
-    Default: "install -v"
-
-  InceptionTimeout:
-    Description: >-
-      The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  For a small HA cluster (12 nodes) with ICP images pre-installed locally (on each node), or with ICP images pulled from a private registry, and on disks with 8000 IOPS, the inception container typically completes the installation in about 70 minutes.
+      The timeout (in seconds) associated with the installation and configuration of the ICP cluster, from start to finish. The ICPInstallationTimeout must be equal or greater than the InceptionTimeout. The ICPInstallationTimeout needs to be sufficient to allow the bootstrap installation script to complete.  See InceptionTimeout for some guidance on expected installation time.
     Type: Number
     Default: 7200
 
-  InstallFromConfigSet:
+  # NOTE The version number is used to determine which insallation image tar ball to use, which Docker install binary to use, etc.
+  # The version number also is used to pick up the config.yaml template to use.
+  ICPVersion:
     Description: >-
-      Variable used to determine when the installation images get copied to the ICP boot node.  If 'Yes', then the installation images are copied at the time the ICP boot node is instantiated using the BaseInstall config set defined in the instance.  If 'No', then the installation images are copied to the boot node using a pre-signed S3 URL as part of the bootstrap script.
+      The version of ICP to be deployed.  The full version must be provided, e.g., 3.1.0.
     Type: String
-    AllowedValues:
-      - Yes
-      - No
-    Default: No
+    Default: 3.1.0
 
-  InstallICPFixpack:
+  InceptionTimeout:
     Description: >-
-      Indicate yes to install an ICP fixpack.  Indicate no if there is no fixpack to install or the fixpack installation is to be skipped.
-      NOTE: Boot node UserData condition checks for value of "Yes" and takes action accordingly.
-    Type: String
-    AllowedValues:
-      - Yes
-      - No
-    Default: No
+      The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  For a small HA cluster (12 nodes) the inception process typically completes the installation in about 60 minutes. The start-to-finish installation time is on the order of 75 minutes for such a cluster.  The InceptionTimeout should be smaller than the ICPInstallationTimeout.
+    Type: Number
+    Default: 7200
 
   KeyFilePath:
     Description: >-
-      Path to a file in the ICP script bucket (ICPScriptBuckeName) with public keys for administrators who need SSH access to the boot node. (Optional)
+      Path to a file in the ICP script bucket (QSS3BuckeName) with public keys for administrators who need SSH access to the boot node. (Optional)
     Type: String
     Default: ''
 
@@ -447,7 +358,7 @@ Parameters:
 
   ManagementNodeCount:
     Description: >-
-      Number of management nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.  The management nodes run the resource and log monitoring monitoring components, e.g., Prometheus, Grafana and the ELK stack.
+      Number of management nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.  The management nodes run the resource and log monitoring components, e.g., Prometheus, Grafana and the ELK stack.
     Type: Number
     Default: 1
 
@@ -464,7 +375,7 @@ Parameters:
 
   MasterNodeCount:
     Description: >-
-      Number of master nodes to be deployed in the ICP cluster. Must be an odd number. For a development deployment 1 is sufficient; for production deployments, 3.
+      Number of master nodes to be deployed in the ICP cluster. Must be an odd number. For a development deployment 1 is sufficient; for production deployments 3. Currently, the master node count can only be 1 or 3.
     Type: Number
     AllowedValues:
       - 1
@@ -489,21 +400,10 @@ Parameters:
     Default: 10.10.10.0/20
 
   PrivateSubnets:
-    # Sample for 3 AZs: 10.10.10.0/24, 10.10.11.0/24, 10.10.12.0/24
     Description: >-
-      A list of CIDR blocks to be used for the private subnets defined in 1, 3 or 4 Availability Zones.  If there is only 1 Availability Zone, then the subnet can be the same as the PrivateSubnetCIDR.  The private subnets cannot overlap and must be within the PrivateSubnetCIDR.
+      A list of CIDR blocks to be used for the private subnets defined in 1 or 3 Availability Zones.  If there is only 1 Availability Zone, then the subnet can be the same as the PrivateSubnetCIDR.  The private subnets cannot overlap and must be within the PrivateSubnetCIDR. NOTE: CommaDelimitedList is invalid to pass into child templates.  Type is declared String, but it is intended to be a comma delimited list. Sample for 3 AZs: 10.10.10.0/24, 10.10.11.0/24, 10.10.12.0/24
     Type: String
     Default: 10.10.10.0/24
-
-  ProxyLBAddress:
-    Description: >-
-      The value to use for the proxy load balancer address.  This value is used to drive the logic in the bootstrap script.
-    Type: String
-    AllowedValues:
-      - UseProxyELBAddress
-      - UseProxyELBName
-      - UsePrimaryAppDomain
-    Default: 'UsePrimaryAppDomain'
 
   ProxyNodeCount:
     Description: >-
@@ -531,32 +431,30 @@ Parameters:
     Default: 10.10.20.0/22
 
   PublicSubnets:
-    # Sample for 3 AZs: 10.10.20.0/24, 10.10.21.0/24, 10.10.22.0/24
     Description: >-
-      List of CIDRs to be used for 1 or more public subnets of the VPC. The number of CIDRs provided must equal the number of Availability Zones (AvailabilityZoneCount). The public subnets must be within the network defined by the PublicSubnetCIDR.  NOTE: CommaDelimitedList is invalid to pass into child templates.  Type is declared String, but it is intended to be a comma delimited list.
+      List of CIDRs to be used for 1 or 3 public subnets of the VPC. The number of CIDRs provided must equal the number of Availability Zones (AvailabilityZoneCount). The public subnets cannot overlap and must be within the network defined by the PublicSubnetCIDR.  NOTE: CommaDelimitedList is invalid to pass into child templates.  Type is declared String, but it is intended to be a comma delimited list. Sample for 3 AZs: 10.10.20.0/24, 10.10.21.0/24, 10.10.22.0/24
     Type: String
     Default: 10.10.20.0/24
+
+  QSS3BucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP boostrap script packages are located. This bucket holds all of the content of the QuickStart git repository for IBM Cloud Private which includes the script packages for the boot node and the cluster nodes.  This bucket also holds the cloud formation templates that defines the ICP infrastructure deployed in the AWS cloud.
+    Type: String
+
+  QSS3KeyPrefix:
+    Description: >-
+      The "context root" of the content for the ICP QuickStart.  By convention it is required that the value of the QSS3KeyPrefix is the name of the git repository associated with the IBM Cloud Private QuickStart artifacts.
+    Type: String
+    Default: quickstart-ibm-cloud-private
 
   ResourceOwner:
     Description: >-
       Value for the owner tag for the deployed resources associated with the stack.
     Type: String
 
-  S3ICPFixpackExecutablePath:
-    Description: >-
-      The S3 path to the latest ICP fixpack executable (.sh) file.
-    Type: String
-    Default: ''
-
-  S3ICPInceptionFixpackPath:
-    Description: >-
-      The S3 path to the latest ICP inception fixpack archive (.tar) file.
-    Type: String
-    Default: ''
-
   ServiceCIDR:
     Description: >-
-      The CIDR for the ICP service overlay network.  This gets assigned to the service_cluster_ip_range attribute in config.yaml.  The value provided must be a network that does not conflict with the AWS VPC network.  It also must not conflict with the ICP cluster overlay network.
+      The CIDR for the ICP service overlay network.  This gets assigned to the service_cluster_ip_range attribute in config.yaml.  The value provided must be a network that does not overlap with the AWS VPC network (VPCCIDR).  It also must not overlap with the ICP cluster overlay network.
     Type: String
     MinLength: 9
     MaxLength: 18
@@ -580,7 +478,7 @@ Parameters:
 
   VPCDomain:
     Description: >-
-      The network domain of the VPC.  The VPCDomain is used when defining the hosted zone.
+      The network domain of the VPC.  The VPCDomain is used when defining the hosted zone. The ClusterName and the VPCDomain are combined to form the ClusterDNSName which is used in the ICP configuration for the cluster_CA_domain parameter in the config.yaml file.  (If PKI certificates are provided for the deployment the CN used for creating the certificates must match the match the value of ClusterName concatenated with a dot and the value of the VPCDomain.)
     Type: String
     Default: example.com
 
@@ -591,8 +489,11 @@ Parameters:
 
   VulnerabilityAdvisorNodeCount:
     Description: >-
-      Number of Vulnerability Advisor nodes to be deployed in the ICP cluster. Not typically deployed for a development environment. For production deployments, at least 2 and typically 3 are deployed.  The VA nodes run the resource image and container security scanning components.
+      Number of Vulnerability Advisor nodes to be deployed in the ICP cluster. Not typically deployed for a development environment. For production deployments, typically 3 are deployed. VA uses zookeeper which requires an odd number of instances for consistency voting purposes. The VA nodes run the resource image and container security scanning components. (NOTE: Not currently supported.)
     Type: Number
+    AllowedValues:
+      - 1
+      - 3
     Default: 1
 
   VulnerabilityAdvisorNodeInstanceType:
@@ -605,6 +506,16 @@ Parameters:
       - m5d.2xlarge
       - m5d.4xlarge
     ConstraintDescription: Must be a valid EC2 instance type.
+
+  WhichProxyLBAddress:
+    Description: >-
+      Selector for the value to use for the proxy load balancer address.  This value is used to drive scripting logic in the bootstrap script.
+    Type: String
+    AllowedValues:
+      - UseProxyELBAddress
+      - UseProxyELBName
+      - UsePrimaryAppDomain
+    Default: 'UsePrimaryAppDomain'
 
   WorkerNodeCount:
     Description: >-
@@ -627,33 +538,6 @@ Parameters:
       - m5d.4xlarge
     ConstraintDescription: Must be a valid EC2 instance type.
 
-Mappings:
-  # See https://cloud-images.ubuntu.com/locator/ec2/
-  # Builds needed that support HVM, Elastic Network Adapter (ENA)
-  # in order to use the MD5 instance types.
-  # TODO - Update EU an AP
-  AWSRegionAMIEC2:
-    us-east-1:
-      Ubuntu16: ami-ef151d90
-    us-east-2:
-      Ubuntu16: ami-dad5efbf
-    us-west-1:
-      Ubuntu16: ami-d8b05cbb
-    us-west-2:
-      Ubuntu16: ami-1cc69e64
-    eu-west-1:
-      Ubuntu16: ami-844e0bf7
-    eu-central-1:
-      Ubuntu16: ami-a9a557c6
-    ap-northeast-1:
-      Ubuntu16: ami-d82efcb9
-    ap-southeast-1:
-      Ubuntu16: ami-d554f1b6
-    ap-southeast-2:
-      Ubuntu16: ami-0bc1f168
-
-Conditions:
-  3AZCondition: !Equals [!Ref AvailabilityZoneCount, 3]
 
 Resources:
 
@@ -716,10 +600,7 @@ Resources:
         # to the master node ELB public DNS name.
         # TODO: This may need to be the value of ClusterCADomain.
         # Need to investigate further.  Talk to Jeff Kwong.
-        - Name: !Join
-            - "."
-            - - !Ref ClusterName
-              - !Ref VPCDomain
+        - Name: !Join ['.', [!Ref ClusterName, !Ref VPCDomain]]
           AliasTarget:
             DNSName: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerDNSName
             HostedZoneId: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerHostedZoneID
@@ -743,8 +624,8 @@ Resources:
     DependsOn: InternetGatewayAttachment
     Properties:
       TemplateURL: !Sub
-        - https://s3.amazonaws.com/${ScriptBucketName}/templates/${Version}/50-icp-public-subnets.yaml
-        - { ScriptBucketName: !Ref ICPScriptBucketName, Version: !Ref CFNTemplateVersion }
+        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/50-icp-public-subnets.yaml
+        - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
         AvailabilityZones: !Ref AvailabilityZones
@@ -762,8 +643,8 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-        - https://s3.amazonaws.com/${ScriptBucketName}/templates/${Version}/51-icp-private-subnets.yaml
-        - { ScriptBucketName: !Ref ICPScriptBucketName, Version: !Ref CFNTemplateVersion }
+        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/51-icp-private-subnets.yaml
+        - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
         AvailabilityZones: !Ref AvailabilityZones
@@ -778,13 +659,14 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-        - https://s3.amazonaws.com/${ScriptBucketName}/templates/${Version}/99-ibm-cloud-private-iam-security.yaml
-        - { ScriptBucketName: !Ref ICPScriptBucketName, Version: !Ref CFNTemplateVersion }
+        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/99-ibm-cloud-private-iam-security.yaml
+        - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
+        ClusterPKIBucketName: !Ref ClusterPKIBucketName
         ExternalSSHLocation: !Ref ExternalSSHLocation
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
-        ICPArchiveBucketName: !Ref ICPArchiveBucketName
-        ICPScriptBucketName: !Ref ICPScriptBucketName
+        ICPArchiveBucketName: !Sub ${ICPArchiveBucketRootName}-${AWS::Region}
+        ICPScriptBucketName: !Ref QSS3BucketName
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         PrivateSubnetCIDR: !Ref PrivateSubnetCIDR
         PublicSubnetCIDR: !Ref PublicSubnetCIDR
@@ -795,8 +677,8 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-        - https://s3.amazonaws.com/${ScriptBucketName}/templates/${Version}/98-ibm-cloud-private-shared-storage.yaml
-        - { ScriptBucketName: !Ref ICPScriptBucketName, Version: !Ref CFNTemplateVersion }
+        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/98-ibm-cloud-private-shared-storage.yaml
+        - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
         PrivateSubnetIds: !GetAtt PrivateSubnetStack.Outputs.PrivateSubnetIds
@@ -812,8 +694,8 @@ Resources:
     # root stack Outputs.
     Properties:
       TemplateURL: !Sub
-        - https://s3.amazonaws.com/${ScriptBucketName}/templates/${Version}/01-ibm-cloud-private-boot.yaml
-        - { ScriptBucketName: !Ref ICPScriptBucketName, Version: !Ref CFNTemplateVersion }
+        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/01-ibm-cloud-private-boot.yaml
+        - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         ApplicationDomains: !Ref ApplicationDomains
         ApplicationStorageMountPoint: !Ref ApplicationStorageMountPoint
@@ -831,38 +713,27 @@ Resources:
         ClusterPKIBucketName: !Ref ClusterPKIBucketName
         ClusterPKIRootPath: !Ref ClusterPKIRootPath
         CustomArtifactsPath: !Ref CustomArtifactsPath
-        DockerInstallBinaryPath: !Ref DockerInstallBinaryPath
         EFSDNSName: !GetAtt ClusterSharedStorage.Outputs.EFSDNSName
         EFSFileSystemId: !GetAtt ClusterSharedStorage.Outputs.EFSFileSystemId
         ExcludedMgmtServices: !Ref ExcludedMgmtServices
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
-        FixpackFileName: !Ref FixpackFileName
-        FixpackInceptionImageName: !Ref FixpackInceptionImageName
-        FixpackInstallCommandString: !Ref FixpackInstallCommandString
-        ICPArchiveBucketName: !Ref ICPArchiveBucketName
-        ICPArchivePath: !Ref ICPArchivePath
         ICPBootNodeScriptPackagePath: !Ref ICPBootNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
-        ICPScriptBucketName: !Ref ICPScriptBucketName
+        ICPS3KeyPrefix: !Ref QSS3KeyPrefix
+        ICPScriptBucketName: !Ref QSS3BucketName
         ICPVersion: !Ref ICPVersion
-        InceptionImageName: !Ref InceptionImageName
-        InceptionInstallCommandString: !Ref InceptionInstallCommandString
         InceptionTimeout: !Ref InceptionTimeout
-        InstallFromConfigSet: !Ref InstallFromConfigSet
-        InstallICPFixpack: !Ref InstallICPFixpack
         InstallationCompletedURL: !Ref InstallationCompletedHandle
         InternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.InternalSSHSecurityGroup
         KeyFilePath: !Ref KeyFilePath
         KeyName: !Ref KeyName
         MasterNodeCount: !Ref MasterNodeCount
         ProxyELBHostedZoneID: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerHostedZoneID
-        ProxyLBAddress: !Ref ProxyLBAddress
+        WhichProxyLBAddress: !Ref WhichProxyLBAddress
         ProxyNodeLoadBalancerName: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerDNSName
         PublicSubnetIds: !GetAtt PublicSubnetStack.Outputs.PublicSubnetIds
         ResourceOwner: !Ref ResourceOwner
         RootStackName: !Ref AWS::StackName
-        S3ICPFixpackExecutablePath: !Ref S3ICPFixpackExecutablePath
-        S3ICPInceptionFixpackPath: !Ref S3ICPInceptionFixpackPath
         ServiceCIDR: !Ref ServiceCIDR
         # Bootstrap script expects root stack ID in position 0 of StackIds
         StackIds: !Join
@@ -879,23 +750,21 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/templates/${Version}/02-ibm-cloud-private-master.yaml
-         - { ScriptBucketName: !Ref ICPScriptBucketName, Version: !Ref CFNTemplateVersion }
+         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/02-ibm-cloud-private-master.yaml
+         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
         AvailabilityZones: !Ref AvailabilityZones
-        DockerInstallBinaryPath: !Ref DockerInstallBinaryPath
         EFSDNSName: !GetAtt ClusterSharedStorage.Outputs.EFSDNSName
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
-        ICPArchiveBucketName: !Ref ICPArchiveBucketName
-        ICPArchivePath: !Ref ICPArchivePath
         ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPMasterSecurityGroup: !GetAtt IAMResources.Outputs.ICPMasterSecurityGroup
-        ICPScriptBucketName: !Ref ICPScriptBucketName
+        ICPS3KeyPrefix: !Ref QSS3KeyPrefix
+        ICPScriptBucketName: !Ref QSS3BucketName
+        ICPVersion: !Ref ICPVersion
         InternalICPSecurityGroup: !GetAtt IAMResources.Outputs.InternalICPSecurityGroup
-        InstallFromConfigSet: !Ref InstallFromConfigSet
         InternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.InternalSSHSecurityGroup
         KeyName: !Ref KeyName
         MasterNodeCount: !Ref MasterNodeCount
@@ -911,21 +780,18 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/templates/${Version}/03-ibm-cloud-private-mgmt.yaml
-         - { ScriptBucketName: !Ref ICPScriptBucketName, Version: !Ref CFNTemplateVersion }
+         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/03-ibm-cloud-private-mgmt.yaml
+         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
         AvailabilityZones: !Ref AvailabilityZones
-        DockerInstallBinaryPath: !Ref DockerInstallBinaryPath
-        ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
-        ICPArchiveBucketName: !Ref ICPArchiveBucketName
-        ICPArchivePath: !Ref ICPArchivePath
         ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
         ICPNodeRole: !GetAtt IAMResources.Outputs.ICPNodeRole
-        ICPScriptBucketName: !Ref ICPScriptBucketName
-        InstallFromConfigSet: !Ref InstallFromConfigSet
+        ICPS3KeyPrefix: !Ref QSS3KeyPrefix
+        ICPScriptBucketName: !Ref QSS3BucketName
+        ICPVersion: !Ref ICPVersion
         InternalICPSecurityGroup: !GetAtt IAMResources.Outputs.InternalICPSecurityGroup
         InternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.InternalSSHSecurityGroup
         KeyName: !Ref KeyName
@@ -939,23 +805,22 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/templates/${Version}/05-ibm-cloud-private-proxy.yaml
-         - { ScriptBucketName: !Ref ICPScriptBucketName, Version: !Ref CFNTemplateVersion }
+         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/05-ibm-cloud-private-proxy.yaml
+         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         ApplicationSecurityGroup: !GetAtt IAMResources.Outputs.ApplicationSecurityGroup
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
         AvailabilityZones: !Ref AvailabilityZones
-        DockerInstallBinaryPath: !Ref DockerInstallBinaryPath
+        # ExternalSSHSecurityGroup is used for debugging
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
-        ICPArchiveBucketName: !Ref ICPArchiveBucketName
-        ICPArchivePath: !Ref ICPArchivePath
         ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
         ICPNodeRole: !GetAtt IAMResources.Outputs.ICPNodeRole
-        ICPScriptBucketName: !Ref ICPScriptBucketName
-        InstallFromConfigSet: !Ref InstallFromConfigSet
+        ICPS3KeyPrefix: !Ref QSS3KeyPrefix
+        ICPScriptBucketName: !Ref QSS3BucketName
+        ICPVersion: !Ref ICPVersion
         InternalICPSecurityGroup: !GetAtt IAMResources.Outputs.InternalICPSecurityGroup
         InternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.InternalSSHSecurityGroup
         KeyName: !Ref KeyName
@@ -971,21 +836,18 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/templates/${Version}/06-ibm-cloud-private-worker.yaml
-         - { ScriptBucketName: !Ref ICPScriptBucketName, Version: !Ref CFNTemplateVersion }
+         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/06-ibm-cloud-private-worker.yaml
+         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
         AvailabilityZones: !Ref AvailabilityZones
-        DockerInstallBinaryPath: !Ref DockerInstallBinaryPath
-        ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
-        ICPArchiveBucketName: !Ref ICPArchiveBucketName
-        ICPArchivePath: !Ref ICPArchivePath
         ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
         ICPNodeRole: !GetAtt IAMResources.Outputs.ICPNodeRole
-        ICPScriptBucketName: !Ref ICPScriptBucketName
-        InstallFromConfigSet: !Ref InstallFromConfigSet
+        ICPS3KeyPrefix: !Ref QSS3KeyPrefix
+        ICPScriptBucketName: !Ref QSS3BucketName
+        ICPVersion: !Ref ICPVersion
         InternalICPSecurityGroup: !GetAtt IAMResources.Outputs.InternalICPSecurityGroup
         InternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.InternalSSHSecurityGroup
         KeyName: !Ref KeyName
@@ -995,19 +857,22 @@ Resources:
         ResourceOwner: !Ref ResourceOwner
         RootStackName: !Ref AWS::StackName
 
+
   InstallationCompletedHandle:
     Type: AWS::CloudFormation::WaitConditionHandle
+
 
   # The wait starts once the BootNodeStack has been created.
   # The bootstrap script that runs on the bootnode stack signals
   # the InstallationCompletedHandle for the wait condition.
-  ICPInstallationCompleted:
+  InstallationCompleted:
     Type: AWS::CloudFormation::WaitCondition
     DependsOn: BootNodeStack
     Properties:
       Count: 1
       Handle: !Ref InstallationCompletedHandle
       Timeout: !Ref ICPInstallationTimeout
+
 
 Outputs:
   MasterNodeLoadBalancerName:

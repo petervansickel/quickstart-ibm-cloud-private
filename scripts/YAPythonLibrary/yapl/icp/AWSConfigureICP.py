@@ -237,9 +237,9 @@ class ConfigureICP(object):
       # In the root CloudFormation template, an alias entry is created in the Route53 DNS 
       # that maps the master ELB public DNS name to the cluster CN, i.e., the ClusterName.VPCDomain.
       # Setting the cluster_lb_address to the cluster_CA_domain avoids OAuth issues in mgmt console.
-      masterELB = self.getClusterCN()
+      masterELB = self.ClusterDNSName
     else:
-      masterELB = self.getClusterCN()
+      masterELB = self.ClusterDNSName
     #endIf
     
     self.configParameters['ClusterLBAddress'] = masterELB
@@ -249,12 +249,12 @@ class ConfigureICP(object):
       raise ICPInstallationException("An ELB with a Name tag of ProxyNodeLoadBalancer was not found.")
     #endIf
     
-    if (self.ProxyLBAddress == 'UseProxyELBAddress'):   
+    if (self.WhichProxyLBAddress == 'UseProxyELBAddress'):   
       # NOTE: ICP 2.1.0.3 can't handle a DNS name in the proxy_lb_address config.yaml attribute.
       proxyELB = self.proxyELBAddress
-    elif (self.ProxyLBAddress == 'UseProxyELBName'):
+    elif (self.WhichProxyLBAddress == 'UseProxyELBName'):
       proxyELB = self.getLoadBalancerDNSName(stackIds,elbName="ProxyNodeLoadBalancer")  
-    elif (self.ProxyLBAddress == 'UsePrimaryAppDomain'):
+    elif (self.WhichProxyLBAddress == 'UsePrimaryAppDomain'):
       # In the root CloudFormation template, an alias entry is created in the Route53 DNS 
       # that maps the proxy ELB public DNS name to the primary application domain.
       # The primary app domain is the first entry in the list of ApplicationDomains passed 
@@ -266,7 +266,7 @@ class ConfigureICP(object):
       
     self.configParameters['ProxyLBAddress'] = proxyELB
     
-    self.configParameters['ClusterCADomain'] = self.getClusterCN()
+    self.configParameters['ClusterCADomain'] = self.ClusterDNSName
     
     # VIPs are not supposed to be needed when load balancers are used.
     # WARNING: For an AWS deployment, VIPs have never worked. 
@@ -453,13 +453,13 @@ class ConfigureICP(object):
   
   def getClusterCN(self):
     """
-      Return the combination of the ClusterName and the VPCDomain
+      Return the ClusterDNSName
       
       The CommonName is used in the PKI certificate that is used by the management console.
     """
     
-    CN = "%s.%s" % (self.ClusterName,self.VPCDomain)
-
+    #CN = "%s.%s" % (self.ClusterName,self.VPCDomain)
+    CN = self.ClusterDNSName
     return CN
   #endDef
   
@@ -1048,7 +1048,7 @@ class ConfigureICP(object):
       NOTE: The cluster CN is the cluster FQDN.
     """
     
-    extraVars = ["target_nodes=all", "host_address=%s" % self.masterELBAddress, "host_name=%s" % self.getClusterCN()]
+    extraVars = ["target_nodes=all", "host_address=%s" % self.masterELBAddress, "host_name=%s" % self.ClusterDNSName]
     self.runAnsiblePlaybook(playbook=self.etcHostsPlaybookPath,extraVars=extraVars)
   #endDef
   

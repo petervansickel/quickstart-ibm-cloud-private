@@ -36,10 +36,7 @@ Metadata:
       - Label:
           default: Deployment Artifact Bucket Parameters
         Parameters:
-          - DockerInstallBinaryPath
           - CustomArtifactsPath
-          - ICPArchiveBucketName
-          - ICPArchivePath
           - ICPBootNodeScriptPackagePath
           - ICPDeploymentLogsBucketName
           - ICPScriptBucketName
@@ -50,7 +47,6 @@ Metadata:
           default: Installation Parameters
         Parameters:
           - InceptionImageName
-          - InceptionInstallCommandString
           - FixpackInceptionImageName
           - FixpackInstallCommandString
           - FixpackFileName
@@ -79,18 +75,12 @@ Metadata:
         default: Cluster Name
       CustomArtifactsPath:
         default: Custom Script Package Path
-      DockerInstallBinaryPath:
-        default: Docker Install Binary Path
       ExternalSSHLocation:
         default: External SSH Location
       FixpackIntallCommandString:
         default: Fixpack Install Command String
       FixpackFileName:
         default: Fixpack File Name
-      ICPArchiveBucketName:
-        default: ICP Archive Bucket Name
-      ICPArchivePath:
-        default: ICP Archive Path
       ICPDeploymentLogsBucketName:
         default: ICP Deployment Logs Bucket Name
       InstallICPFixpack:
@@ -175,9 +165,9 @@ Parameters:
       The network domain of the cluster.
     Type: String
 
-  ClusterName:
+  ClusterHostedZoneId:
     Description: >-
-      The name of the cluster.
+      The HostedZone resource ID for the ICP cluster.  The ClusterHostedZoneID is used by the bootstrap script to create alias record entries for the Proxy ELB DNS name.
     Type: String
 
   ClusterLBAddress:
@@ -188,6 +178,11 @@ Parameters:
       - UseMasterELBAddress
       - UseMasterELBName
       - UseClusterName
+
+  ClusterName:
+    Description: >-
+      The name of the cluster.
+    Type: String
 
   ClusterPKIBucketName:
     Description: >-
@@ -204,11 +199,6 @@ Parameters:
       Path to a zip archive in the ICP script bucket (ICPScriptBucketName) for an archive of additional artifacts, typically scripts, for ICP cluster administration extracted on the boot node in the root home directory.
     Type: String
 
-  DockerInstallBinaryPath:
-    Description: >-
-      The path to the Docker install binary in the ICP bucket.
-    Type: String
-
   EFSDNSName:
     Description: >-
       The EFS server public DNS name providing shared storage used for application shared storage.  The boot node configures a volume and mounts it at the ApplicationStorageMountPoint. Used by the boostrap script that runs once the CloudFormaton templates have been deployed.
@@ -219,37 +209,14 @@ Parameters:
       EFS file system ID to be used to configure the Kubernetes EFS provisioner. Used by the bootstrap script once the CloudFormation templates have deployed.
     Type: String
 
+  ExcludedMgmtServices:
+    Description: >-
+      String with the form of a comma delimited list of management services to be excluded from the IBM Cloud Private deployment.  Services that may be excluded are: service-catalog, metering, monitoring, istio, vulnerability-advisor, custom-metrics-adapter
+    Type: String
+
   ExternalSSHSecurityGroup:
     Description: >-
       The ExternalSSHSecurityGroup resource ID from the parent template.
-    Type: String
-
-  FixpackInceptionImageName:
-    Description: >-
-      The name of the inception image used for the ICP installation when the ICP fixpack is to be installed.
-    Type: String
-    Default: "ibmcom/icp-inception:2.1.0.3-ee-fp1"
-
-  FixpackInstallCommandString:
-    Description: >-
-      The command string to use when invoking the ICP fixpack installation.
-    Type: String
-    Default: "install -v"
-
-  FixpackFileName:
-    Description: >-
-      The name of the fixpack file, e.g., ibm-cloud-private-2.1.0.3-fp1.sh.
-    Type: String
-    Default: ''
-
-  ICPArchiveBucketName:
-    Description: >-
-      The name of the S3 bucket where the ICP install archive and Docker install binary is located.
-    Type: String
-
-  ICPArchivePath:
-    Description: >-
-      The path to the ICP install archive in the ICP bucket.
     Type: String
 
   ICPBootNodeScriptPackagePath:
@@ -257,54 +224,24 @@ Parameters:
       The path in the ICP bootstrap S3 bucket to the ICP Boot node script package (zip) file.
     Type: String
 
-  ClusterDomain:
-    Description: >-
-      The network domain of the cluster.
-    Type: String
-
-  ClusterHostedZoneId:
-    Description: >-
-      The HostedZone resource ID for the ICP cluster.  The ClusterHostedZoneID is used by the bootstrap script to create alias record entries for the Proxy ELB DNS name.
-    Type: String
-
-  ClusterName:
-    Description: >-
-      The name of the cluster.
-    Type: String
-
-  ExcludedMgmtServices:
-    Description: >-
-      String with the form of a comma delimited list of management services to be excluded from the IBM Cloud Private deployment.  Services that may be excluded are: service-catalog, metering, monitoring, istio, vulnerability-advisor, custom-metrics-adapter
-    Type: String
-
-  ICPArchivePath:
-    Description: >-
-      The path to the ICP install archive in the ICP bucket provide by the parent stack. Used in the bootstrap script.
-    Type: String
-
   ICPDeploymentLogsBucketName:
     Description: >-
       The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
     Type: String
 
+  ICPS3KeyPrefix:
+    Description: >-
+      The S3 key prefix (context root) for IBM Cloud Private installation artifacts in the ICPScriptBucketName S3 bucket.  (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
+    Type: String
+
   ICPScriptBucketName:
     Description: >-
-      The name of the S3 bucket where the ICP boostrap script packages are located.
+      The name of the S3 bucket where the ICP boostrap script packages are located. (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
     Type: String
 
   ICPVersion:
     Description: >-
-      The version of ICP to be deployed. Provided by the parent stack.  Used in the bootstrap script.
-    Type: String
-
-  InceptionImageName:
-    Description: >-
-      The name of the inception image to use for the ICP installation.
-    Type: String
-
-  InceptionInstallCommandString:
-    Description: >-
-      The command string to use when invoking the ICP installation.
+      The version of ICP to be deployed. Provided by the parent stack.  Used in the bootstrap script to determine what ICP and Docker to install.
     Type: String
 
   InceptionTimeout:
@@ -312,22 +249,9 @@ Parameters:
       The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  Provided by the parent stack.  Used in the bootstrap script.
     Type: Number
 
-  InstallFromConfigSet:
-    Description: >-
-      Variable used to determine when the installation images get copied to the ICP boot node.  If 'Yes', then the installation images are copied at the time the ICP boot node is instantiated using the BaseInstall config set defined in the instance.  If 'No', then the installation images are copied to the boot node using a pre-signed S3 URL as part of the bootstrap script.
-    Type: String
-
-  InstallICPFixpack:
-    Description: >-
-      Indicate yes to install an ICP fixpack.  Indicate no if there is no fixpack to install or the fixpack installation is to be skipped.
-    Type: String
-    AllowedValues:
-      - Yes
-      - No
-
   InstallationCompletedURL:
     Description: >-
-      The pre-assigned URL to use for signalling the ICPInstallationCompleted wait condition in the parent stack.  The bootstrap script sends a signal to the wait condition when the inception install and all the other configuration of ICP has completed.
+      The pre-assigned URL to use for signalling the ICPInstallationCompleted wait condition in the parent stack.  The UserData code sends a success/failure signal to the wait condition when the inception install and all the other configuration of ICP has completed.
     Type: String
 
   # TODO - I don't think this is needed in this template.  Need to test.
@@ -360,7 +284,7 @@ Parameters:
       The Proxy ELB HostedZone resource ID is used by the bootstrap script to create alias record entries for the Proxy ELB DNS name.
     Type: String
 
-  ProxyLBAddress:
+  WhichProxyLBAddress:
     Description: >-
       The value to use for the proxy load balancer address.  This value is used to drive the logic in the bootstrap script.
     Type: String
@@ -387,16 +311,6 @@ Parameters:
   RootStackName:
     Description: >-
       The name of the root stack.
-    Type: String
-
-  S3ICPFixpackExecutablePath:
-    Description: >-
-      The S3 path to the latest ICP fixpack executable (.sh) file.
-    Type: String
-
-  S3ICPInceptionFixpackPath:
-    Description: >-
-      The S3 path to the latest ICP inception fixpack archive (.tar) file.
     Type: String
 
   ServiceCIDR:
@@ -455,7 +369,6 @@ Resources:
           type: S3
           roleName: !Ref BootNodeRole
           buckets:
-            - !Ref ICPArchiveBucketName
             - !Ref ICPScriptBucketName
 
       AWS::CloudFormation::Init:
@@ -468,10 +381,6 @@ Resources:
             - InstallPackages
             - StackPropertiesFile
             - ICPBootstrapScripts
-          BaseInstall:
-            - ICPInstallBinaries
-          FixPack:
-            - ICPFixpackBinaries
           Custom:
             - CustomArtifacts
           KeyFile:
@@ -486,64 +395,30 @@ Resources:
               nfs-common: []
               socat: []
               inetutils-traceroute: []
+              python-yaml: []
             python:
               pycryptodome: []
               boto3: []
               requests: []
 
-        ICPInstallBinaries:
-          files:
-            /root/docker/icp-install-docker.bin:
-              source: !Sub
-                - https://${ArchiveBucketName}.s3.amazonaws.com/${InstallExecutable}
-                - { ArchiveBucketName: !Ref ICPArchiveBucketName, InstallExecutable: !Ref DockerInstallBinaryPath }
-              mode: '000554'
-              owner: root
-              group: root
-            /tmp/icp-install-archive.tgz:
-              source: !Sub
-                - https://${ArchiveBucketName}.s3.amazonaws.com/${ArchivePath}
-                - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref ICPArchivePath }
-              mode: '000664'
-              owner: root
-              group: root
-
-        ICPFixpackBinaries:
-          files:
-            /tmp/icp-fixpack.sh:
-              source: !Sub
-                - https://${ArchiveBucketName}.s3.amazonaws.com/${FixpackExecutable}
-                - { ArchiveBucketName: !Ref ICPArchiveBucketName, FixpackExecutable: !Ref S3ICPFixpackExecutablePath }
-              mode: '000554'
-              owner: root
-              group: root
-
-            /tmp/icp-inception-fixpack.tar:
-              source: !Sub
-                - https://${ArchiveBucketName}.s3.amazonaws.com/${ArchivePath}
-                - { ArchiveBucketName: !Ref ICPArchiveBucketName, ArchivePath: !Ref S3ICPInceptionFixpackPath }
-              mode: '000664'
-              owner: root
-              group: root
-
         ICPBootstrapScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${ScriptPackagePath}
-             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPBootNodeScriptPackagePath }
+             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPBootNodeScriptPackagePath }
 
         CustomArtifacts:
           sources:
             /root: !Sub
-              - https://${ScriptBucketName}.s3.amazonaws.com/${ArtifactsPath}
-              - { ScriptBucketName: !Ref ICPScriptBucketName, ArtifactsPath: !Ref CustomArtifactsPath }
+              - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${ArtifactsPath}
+              - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ArtifactsPath: !Ref CustomArtifactsPath }
 
         KeyFile:
           files:
             /root/ssh_publickeys:
               source: !Sub
-                - https://${ScriptBucketName}.s3.amazonaws.com/${KeyFilePath}
-                - { ScriptBucketName: !Ref ICPScriptBucketName, KeyFilePath: !Ref KeyFilePath }
+                - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${KeyFilePath}
+                - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, KeyFilePath: !Ref KeyFilePath }
               mode: '000554'
               owner: root
               group: root
@@ -609,14 +484,6 @@ Resources:
             pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
             # Install the files and packages from the metadata
             /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ICPBootNode --configsets Required --region ${AWS::Region}
-            # Conditionally get the base install image tar ball and docker binary
-            if [ "${InstallFromConfigSet}" = "Yes" ]; then
-              /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ICPBootNode --configsets BaseInstall --region ${AWS::Region}
-            fi
-            # Conditionally get the the fixpack images tar ball
-            if [ "${InstallICPFixpack}" = "Yes" ]; then
-              /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ICPBootNode --configsets Fixpack --region ${AWS::Region}
-            fi
             # Conditionally load the custom archive
             if [ "${CustomArtifactsPath}" != "" ]; then
               /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ICPBootNode --configsets Custom --region ${AWS::Region}
@@ -636,6 +503,7 @@ Resources:
             cd /root
             /root/bootstrap.sh --os ubuntu
             rc=$?
+            # signal rc code to root stack wait condition
             /usr/local/bin/cfn-signal -e $rc --id ${AWS::StackId} --reason "ICP Installation Status" "${InstallationCompletedURL}"
 
       Tags:

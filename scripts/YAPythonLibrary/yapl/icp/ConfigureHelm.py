@@ -12,6 +12,9 @@ NOTES:
   
   This class emulates those instructions.
   
+  It is assumed ICP is installed.  The boot node has the cert and key files used for the 
+  Helm cert and key.
+  
   We also had as a guide the setup-helm.sh script written by Sanjay Joshi.
   
 """
@@ -19,7 +22,7 @@ NOTES:
 import requests
 import stat
 import os
-from subprocess import check_call, check_output, CalledProcessError
+from subprocess import check_output, CalledProcessError
 import shutil
 import tarfile
 
@@ -30,8 +33,10 @@ from yapl.exceptions.Exceptions import MissingArgumentException
 TR = Trace(__name__)
 
 """
-Got this context manager from:
+Got the cd context manager from:
 https://stackoverflow.com/questions/431684/how-do-i-change-directory-cd-in-python/13197763#13197763
+
+It turns out the context manager is not needed.
 """
 class cd:
     """Context manager for changing the current working directory"""
@@ -66,18 +71,47 @@ class ConfigureHelm(object):
   """
 
 
-  def __init__(self, clusterDNSName):
+  def __init__(self, **restArgs):
     """
       Constructor
+      
+      Required arguments:
+        ClusterDNSName    - the DNS name used for the CN of the cluster cert and used to access the ICP admin console
+        HelmKeyPath       - the path to the user key file, e.g., ~/.kube/kubecfg.key or <icp_home>/cluster/cfc-certs/helm/admin.key
+        HelmCertPath      - the path to the user cert file, e.g., ~/.kube/kubecfg.cert or <icp_home>/cluster/cfc-certs/helm/admin.crt
+        ClusterCertPath   - the path to the file that holds the CA cert.  The cluster CA cert is usually used for this.
     """
     object.__init__(self)
     
-    if (not clusterDNSName):
+    self.ClusterDNSName = restArgs.get('ClusterDNSName')
+    if (not self.ClusterDNSName):
       raise MissingArgumentException("The cluster DNS name to be used to access the ICP master must be provided.")
     #endIf
 
-    self.home = os.path.expanduser('~')
-    self.clusterDNSName = clusterDNSName
+    self.HelmKeyPath = restArgs.get('HelmKeyPath')
+    if (not self.HelmKeyPath):
+      raise MissingArgumentException("The file path to the Helm user key must be provided.")
+    #endIf
+    
+    self.HelmCertPath = restArgs.get('HelmCertPath')
+    if (not self.HelmCertPath):
+      raise MissingArgumentException("The file path to the Helm user certificate must be provided.")
+    #endIf
+
+    self.ClusterCertPath = restArgs.get('ClusterCertPath')
+    if (not self.ClusterCertPath):
+      raise MissingArgumentException("The file path to the cluster certificate must be provided.")
+    #endIf
+    
+    HelmHome = restArgs.get('HelmHome')
+    if (not HelmHome):
+      HelmHome = os.path.join(os.path.expanduser('~'),".helm")
+    #endIf
+    self.HelmHome = HelmHome
+    
+    self.UserKeyPath = os.path.join(self.HelmHome,"key.pem")
+    self.UserCertPath = os.path.join(self.HelmHome,"cert.pem")
+    self.CACertPath = os.path.join(self.HelmHome,"ca.pem")
   #endDef
   
   
@@ -94,7 +128,7 @@ class ConfigureHelm(object):
     methodName = 'installHelm'
      
     tgzPath = "/tmp/helm-linux-amd64.tar.gz"
-    url = "https://%s:8443/api/cli/helm-linux-amd64.tar.gz" % self.clusterDNSName
+    url = "https://%s:8443/api/cli/helm-linux-amd64.tar.gz" % self.ClusterDNSName
     
     if (TR.isLoggable(Level.FINEST)):
       TR.finest(methodName,"Downloading Helm tgz file from: %s to: %s" % (url,tgzPath))
@@ -127,30 +161,6 @@ class ConfigureHelm(object):
   #endDef
   
 
-  def getClusterCACert(self, certFilePath):
-    """
-      Use openssl to get the CA cert of the cluster to be used by helm for secure connections to Tiller.
-      
-      The approach is from Sanjay Joshi's script, and can also be found in numerous references on the Internet.
-    """
-    methodName = 'getClusterCACert'
-    
-    if (not certFilePath):
-      raise MissingArgumentException("The destination file path for the X.509 certificate must be provided.")
-    #endIf
-    
-    try:
-      TR.info(methodName, "Invoking: openssl s_client -showcerts -connect %s:8443 < /dev/null 2> /dev/null | openssl x509 -outform PEM > %s" % (self.clusterDNSName,certFilePath))
-      #check_call(["openssl", "s_client", "-showcerts", "-connect", "%s:8443" % self.clusterDNSName, "<", "/dev/null", "2>", "/dev/null", "|", "openssl", "x509", "-outform", "PEM", ">", "%s" % certFilePath])
-      check_call("openssl s_client -showcerts -connect {0}:8443 < /dev/null 2> /dev/null | openssl x509 -outform PEM > {1}".format(self.clusterDNSName,certFilePath), shell=True)
-    except CalledProcessError as e:
-      TR.error(methodName,"Exception getting cluster CA cert: %s" % e, e)
-      raise e
-    #endIf
-      
-  #endDef
-  
-  
   def configureHelm(self):
     """
       Configure helm after helm executable has been installed.
@@ -176,11 +186,16 @@ class ConfigureHelm(object):
     #endTry
 
     # Set HELM_HOME to the full path and visible to the Python process context.
-    os.environ['HELM_HOME'] = "{home}/.helm".format(home=self.home)
+    os.environ['HELM_HOME'] = self.HelmHome
     if (TR.isLoggable(Level.FINEST)):
       TR.finest(methodName,"HELM_HOME=%s" % os.environ.get('HELM_HOME'))
     #endIf
-    
+
+    # Copy the CA, user key and user cert to the default location in HELM_HOME.  
+    shutil.copyfile(self.HelmKeyPath,self.UserKeyPath)
+    shutil.copyfile(self.HelmCertPath,self.UserCertPath)
+    shutil.copyfile(self.ClusterCertPath,self.CACertPath)
+      
     try:
       TR.info(methodName, "Invoking: helm repo add ibm-charts https://raw.githubusercontent.com/IBM/charts/master/repo/stable/")
       output = check_output(["helm", "repo", "add", "ibm-charts", "https://raw.githubusercontent.com/IBM/charts/master/repo/stable/"])
@@ -191,6 +206,7 @@ class ConfigureHelm(object):
       if (e.output): TR.info(methodName,"ERROR: repo add ibm-charts output:\n%s" % e.output.rstrip())
       TR.error(methodName,"Exception calling repo add ibm-charts: %s" % e, e)
     #endTry
+
     
     try:
       TR.info(methodName, "Invoking: helm repo add ibmcase-spring https://raw.githubusercontent.com/ibm-cloud-architecture/refarch-cloudnative-spring/master/docs/charts/")
@@ -202,13 +218,14 @@ class ConfigureHelm(object):
       if (e.output): TR.info(methodName,"ERROR: repo add ibmcase-spring output:\n%s" % e.output.rstrip())
       TR.error(methodName,"Exception calling repo add ibmcase-spring: %s" % e, e)
     #endTry
-    
-    self.clusterCertPath = os.path.join(self.home,"cluster-ca.crt")
-    self.getClusterCACert(self.clusterCertPath)
+
     
     try:
-      TR.info(methodName, "Invoking: helm repo add --ca-file {cacert} --cert-file {home}/.kube/kubecfg.crt --key-file {home}/.kube/kubecfg.key mgmt-charts https://{cluster}:8443/mgmt-repo/charts".format(cacert=self.clusterCertPath,home=self.home,cluster=self.clusterDNSName))
-      output = check_output(["helm", "repo", "add", "--ca-file", self.clusterCertPath, "--cert-file", "%s/.kube/kubecfg.crt" % self.home, "--key-file", "%s/.kube/kubecfg.key" % self.home, "mgmt-charts", "https://%s:8443/mgmt-repo/charts" % self.clusterDNSName])
+#      TR.info(methodName, "Invoking: helm repo add --ca-file {cacert} --cert-file {helmcert} --key-file {helmkey} mgmt-charts https://{cluster}:8443/mgmt-repo/charts".format(cacert=self.ClusterCertPath,helmcert=self.HelmCertPath,helmkey=self.HelmKeyPath,cluster=self.ClusterDNSName))
+#      output = check_output(["helm", "repo", "add", "--ca-file", self.ClusterCertPath, "--cert-file", self.HelmCertPath, "--key-file", self.HelmKeyPath, "mgmt-charts", "https://%s:8443/mgmt-repo/charts" % self.ClusterDNSName])
+      # Use default ca, key, cert 
+      TR.info(methodName, "Invoking: helm repo add mgmt-charts https://{cluster}:8443/mgmt-repo/charts".format(cluster=self.ClusterDNSName))
+      output = check_output(["helm", "repo", "add", "mgmt-charts", "https://%s:8443/mgmt-repo/charts" % self.ClusterDNSName])
       if (output): TR.info(methodName,"helm repo add mgmt-charts output:\n%s" % output.rstrip())
     except CalledProcessError as e:
       if (e.output): TR.info(methodName,"ERROR: repo add mgmt-charts output:\n%s" % e.output.rstrip())

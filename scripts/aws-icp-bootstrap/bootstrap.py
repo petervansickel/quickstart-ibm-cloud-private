@@ -56,17 +56,33 @@ History:
   30 OCT 2018 - pvs - Refactored to eliminate need to introspect root stack for outputs.
   All bootstrap script inputs come from boot stack parameters.  Also removed some other dead code
   for doing a private registry.
+  
+  5 - 9 NOV 2018 - pvs - Added ability to execute helm and kubectl commands based on yaml representation
+  of the commands to be executed.  Initially this capability was motivated by the helm and kubectl 
+  needed to install Transformation Advisor.  Also intended for use with ICP for Data installation.
+  See HelmHelper, KubeHelper and the installables() method.
+  
+  9 - 11 NOV 2018 - pvs - Moved to using the icp-install-artifact-map.yaml to define the S3 buckets,
+  and the paths in those buckets for the ICP and Docker images for base and fixpacks.  This information
+  will no longer be passed in through CloudFormation parameters.  This greatly simplifies the inputs
+  that need to be provided by the deployer.  See getInstallImages() method.
+  
+  12 - 19 NOV 2018 - pvs - Added KubeHelper and HelmHelper classes to execute arbitrary kubectl and 
+  helm commands defined by yaml files in a command directory.  Refactored out the common code to
+  CommandHelper and specialized KubectlHelper and HelmHelper classes.  (Not fully tested) Works for
+  Transformation Advisor and its artifacts.
 """
 
 from Crypto.PublicKey import RSA
-from subprocess import call
+from subprocess import call, check_call, CalledProcessError
 import socket
 import shutil
 import requests
 from os import chmod
-import sys, os.path, time, datetime
+import sys, os.path, time
 import boto3
 import docker
+import yaml
 from botocore.exceptions import ClientError
 from yapl.utilities.Trace import Trace, Level
 import yapl.utilities.Utilities as Utilities
@@ -84,6 +100,8 @@ from yapl.icp.AWSConfigureEFS import ConfigureEFS
 from yapl.icp.ConfigurePKI import ConfigurePKI
 from yapl.k8s.ConfigureKubectl import ConfigureKubectl
 from yapl.icp.ConfigureHelm import ConfigureHelm
+from yapl.helm.HelmHelper import HelmHelper
+from yapl.k8s.KubeHelper import KubeHelper
 
 ClusterHostSyncSleepTime = 60
 ClusterHostSyncMaxTryCount = 100
@@ -95,30 +113,6 @@ StackStatusSleepTime = 60
   The __getattr__ method on the Bootstrap class is used to make StackParameters accessible
   as instance variables.
   
-  Installation Parameters (in alphabetical order):
-    FixpackInceptionImageName     - The name of the ICP fixpack inception image,
-                                    e.g., ibmcom/icp-inception:2.1.0.3-ee-fp1
-                                    
-    FixpackInstallCommandString   - The command string to use to launch the ICP fixpack installation.
-                                    e.g., install -v
-                                    
-    ICPArchivePath                - The last element of the ICPArchivePath is the ICPArchiveName
-                                    e.g., ibm-cloud-private-x86_64-2.1.0.3.tar.gz
-     
-    ICPDeploymentLogsBucketName   - The name of the S3 bucket where the installation logs get exported.                  
-    
-    
-    InceptionImageName            - The name of the ICP inception image, 
-                                    e.g., ibmcom/icp-inception:2.1.0.3-ee
-    
-    InceptionInstallCommandString - The command string to use to launch the ICP installation.
-                                    e.g., install -v
-                                    When installing the ICP 2.1.0.3 fixpack 1 the install command
-                                    string is: ./cluster/ibm-cloud-private-2.1.0.3-fp1.sh
-
-    InstallICPFixpack             - Switch that controls whether or not to install the ICP fixpack.
-    
-    TBD - more that need to be documented.                        
 """
 
 ICPClusterRoles = [ 'master', 'worker', 'proxy', 'management', 'va', 'etcd' ]
@@ -132,7 +126,31 @@ StackParameters = {}
 StackParameterNames = []
 
 """
-  The SSMParameterKeys gets initialized in the _init() method. 
+  IntrinsicVariables are special variables made available to scripts that need 
+  the information captured in the intrinsic variable values.
+"""
+IntrinsicVariableNames = [
+    "ClusterCertPath",
+    "ClusterDNSName",
+    "ClusterName",
+    "EFSDNSName",
+    "EFSFileSystemId",
+    "HelmHome",
+    "HelmCertPath",
+    "HelmKeyPath",
+    "HelmCertPath",
+    "ICPVersion",
+    "KubeCertPath",
+    "KubeKeyPath"
+  ]
+
+IntrinsicVariables = {}
+
+
+"""
+  The SSMParameterKeys are used for rudimentary communication of state information
+  between the boot node and the cluster nodes.
+  The SSMParameterKeys gets initialized in the _init() method.
 """
 SSMParameterKeys = []
 
@@ -343,7 +361,7 @@ class Bootstrap(object):
       TR.appendTraceLog(logFile)
     #endIf
 
-    trace = self._getArg(['trace', 'loglevel'],traceArgs)
+    trace = self._getArg(['trace', 'loglevel'], traceArgs)
 
     if (trace):
       if (not logFile):
@@ -404,6 +422,32 @@ class Bootstrap(object):
     return result
   #endDef
   
+  
+  def getClusterCACert(self, certFilePath,clusterDNSName):
+    """
+      Use openssl to get the CA cert of the cluster to be used by helm for secure connections to Tiller.
+      
+      The approach is from Sanjay Joshi's script, and can also be found in numerous references on the Internet.
+    """
+    methodName = 'getClusterCACert'
+    
+    if (not certFilePath):
+      raise MissingArgumentException("The destination file path for the X.509 certificate must be provided.")
+    #endIf
+    
+    try:
+      TR.info(methodName, "Invoking: openssl s_client -showcerts -connect %s:8443 < /dev/null 2> /dev/null | openssl x509 -outform PEM > %s" % (clusterDNSName,certFilePath))
+      #check_call(["openssl", "s_client", "-showcerts", "-connect", "%s:8443" % self.clusterDNSName, "<", "/dev/null", "2>", "/dev/null", "|", "openssl", "x509", "-outform", "PEM", ">", "%s" % certFilePath])
+      check_call("openssl s_client -showcerts -connect {cluster}:8443 < /dev/null 2> /dev/null | openssl x509 -outform PEM > {cert}".format(cluster=clusterDNSName,cert=certFilePath), shell=True)
+    except CalledProcessError as e:
+      TR.error(methodName,"Exception getting cluster CA cert: %s" % e, e)
+      raise e
+    #endIf
+      
+  #endDef
+  
+  
+
   def getClusterName(self):
     """
       Return the FQDN used to access the ICP management console for this cluster. 
@@ -413,17 +457,18 @@ class Bootstrap(object):
       
       This is a convenience method for getting the cluster FQDN.
     """
-    return self.CN
+    return self.ClusterDNSName
   #endDef
   
   
   def getClusterCN(self):
     """
-      Return the cluster CN comprised of the ClusterName and VPCDomain. 
+      Return the cluster CN comprised of the ClusterName, VPCSubdomainPrefix and the VPCDomain. 
       A common name is needed for the ICP X.509 certificate for the cluster (e.g., the management console.
     """
 
-    CN = "%s.%s" % (self.ClusterName,self.VPCDomain)
+    #CN = "%s.%s" % (self.ClusterName,self.VPCDomain)
+    CN = self.ClusterDNSName
     return CN
   #endDef
   
@@ -445,7 +490,7 @@ class Bootstrap(object):
       
     """
     methodName = "_init"
-    global StackParameters, StackParameterNames
+    global StackParameters, StackParameterNames, IntrinsicVariables, IntrinsicVariableNames
     
     StackParameters = self.getStackParameters(bootStackId)
     StackParameterNames = StackParameters.keys()
@@ -453,7 +498,15 @@ class Bootstrap(object):
     if (TR.isLoggable(Level.FINEST)):
       TR.finest(methodName,"StackParameters: %s" % StackParameters)
     #endIf
-      
+    
+    # Some stack parameter variables are made available to other scripts via IntrinsicVariables.  
+    for name in IntrinsicVariableNames:
+      value = StackParameters.get(name)
+      if (value != None):
+        IntrinsicVariables[name] = value
+      #endIf
+    #endFor
+    
     # Create a second icpVersion that is the same as the ICPVersion from the stack parameters
     # but with the dots removed.  ICPVersion must be provided as a stack parameter.
     self.icpVersion = self.ICPVersion.replace('.','')
@@ -470,15 +523,13 @@ class Bootstrap(object):
       raise ICPInstallationException("Playbook: %s, does not exist in the bootstrap script package." % (self.etcHostsPlaybookPath))
     #endIf
     
-    
-    if (not self.ICPArchivePath):
-      raise ICPInstallationException("The ICPArchivePath must be provided in the stack parameters.")
+    # If the bootstrap script package includes an "installables" directory, 
+    # then prepare for installing things defined in that directory, post ICP installation.
+    installablesPath = os.path.join(self.home,"installables")
+    if (not os.path.isdir(installablesPath)):
+      installablesPath = None
     #endIf
-    
-    self.icpInstallImageFileName = os.path.basename(self.ICPArchivePath)
-    if (TR.isLoggable(Level.FINER)):
-      TR.finer(methodName,"ICP installation image file name: %s" % self.icpInstallImageFileName)
-    #endIf
+    self.installablesPath = installablesPath
     
     # The root stack parameter InceptionTimeout is expected to be provided.    
     if (not self.InceptionTimeout):
@@ -1256,7 +1307,7 @@ class Bootstrap(object):
         #endIf
       #endWith
     except Exception as e:
-      raise ICPInstallationException("Error calling ssh-keyscan: %s" % e)
+      raise ICPInstallationException("ERROR: %s" % e)
     #endTry
     
   #endDef
@@ -1333,46 +1384,90 @@ class Bootstrap(object):
     
     return destPath
   #endDef
+
+  
+  def loadInstallMap(self, version=None, region=None):
+    """
+      Return a dictionary that holds all the installation image information needed to 
+      retrieve the installation images from S3. 
+      
+      Which install images to use is driven by the ICP version.
+      Which S3 bucket to use is driven by the AWS region of the deployment.
+      
+      The source of the information is icp-install-artifact-map.yaml packaged with the
+      boostrap script package.  The yaml file holds the specifics regarding which bucket
+      to use and the S3 path for the ICP and Docker images as well as the Docker image
+      name and the inception commands to use for the installation.          
+    """
+    methodName = "loadInstallMap"
+    
+    if (not version):
+      raise MissingArgumentException("The ICP version must be provided.")
+    #endIf
+    
+    if (not region):
+      raise MissingArgumentException("The AWS region must be provided.")
+    #endIf
+        
+    installDocPath = os.path.join(self.home,"yaml","icp-install-artifact-map.yaml")
+    
+    with open(installDocPath,'r') as installDocFile:
+      installDoc = yaml.load(installDocFile)
+    #endWith
+    
+    if (TR.isLoggable(Level.FINEST)):
+      TR.finest(methodName,"Install doc: %s" % installDoc)
+    #endIf
+    
+    installMap = installDoc.get(version)
+    if (not installMap):
+      raise ICPInstallationException("No ICP or Docker installation images defined for ICP version: %s" % version)
+    #endIf
+    
+    buckets = installDoc.get('s3-buckets')
+    
+    if (TR.isLoggable(Level.FINEST)):
+      TR.finest(methodName,"S3 installation image buckets: %s" % buckets)
+    #endIf
+    
+    regionBucket = buckets.get(region)
+    if (not regionBucket):
+      raise ICPInstallationException("No S3 bucket for installation images defined for region: %s" % region)
+    #endIf
+    
+    # The version is needed to get to the proper folder in the region bucket.
+    installMap['version'] = version
+    installMap['s3bucket'] = regionBucket
+    
+    return installMap
+    
+  #endDef
   
   
-  def getInstallImages(self):
+  def getInstallImages(self, installMap):
     """
       Create a presigned URL and use it to download the ICP and Docker images from the S3
       bucket where the images are stored.
       
-      CloudFormation input parameters used in this method:
-        ICPArchiveBucketName
-        ICPArchivePath 
-        DockerInstallBinaryPath 
+      ICP install image gets downloaded to: /tmp/icp-install-archive.tgz
+      Docker binary gets downloaded to: /root/docker/icp-install-docker.bin
         
-        Docker binary gets downloaded to: /root/docker/icp-install-docker.bin
-        ICP install image gets downloaded to: /tmp/icp-install-archive.tgz
-        
-      NOTE: If the image files already exist, then nothing is done.  (The image files may be 
-      copied to the desired location in the local file system using a ConfigSet as part of the
-      instantiation of the boot node in the CloudFormation template.  
-      
       Using a pre-signed URL is needed when the deployer does not have access to the installation
       image bucket.
     """
     methodName = "getInstallImages"
     
-    icpImagePath = "/tmp/icp-install-archive.tgz"
-    dockerBinaryPath = "/root/docker/icp-install-docker.bin"
+    icpLocalPath = "/tmp/icp-install-archive.tgz"
+    icpS3Path = "{version}/{object}".format(version=installMap['version'],object=installMap['icp-base-install-archive'])
+    dockerLocalPath = "/root/docker/icp-install-docker.bin"
+    dockerS3Path = "{version}/{object}".format(version=installMap['version'],object=installMap['docker-install-binary'])    
+    bucket = installMap['s3bucket']
     
-    if (not os.path.isfile(icpImagePath)):
-      TR.info(methodName,"Getting object: %s from bucket: %s using a pre-signed URL." % (self.ICPArchivePath,self.ICPArchiveBucketName))
-      self.getS3Object(bucket=self.ICPArchiveBucketName,s3Path=self.ICPArchivePath,destPath=icpImagePath)
-    else:
-      TR.info(methodName,"ICP installation image already exists: %s" % icpImagePath)
-    #endIf
+    for s3Path, localPath in zip([icpS3Path, dockerS3Path], [icpLocalPath, dockerLocalPath]):
+      TR.info(methodName,"Getting object: %s from bucket: %s using a pre-signed URL." % (s3Path,bucket))
+      self.getS3Object(bucket=bucket, s3Path=s3Path, destPath=localPath)
+    #endFor
     
-    if (not os.path.isfile(dockerBinaryPath)):
-      TR.info(methodName,"Getting object: %s from bucket: %s using a pre-signed URL." % (self.DockerInstallBinaryPath,self.ICPArchiveBucketName))
-      self.getS3Object(bucket=self.ICPArchiveBucketName,s3Path=self.DockerInstallBinaryPath,destPath=dockerBinaryPath)
-    else:
-      TR.info(methodName,"Docker installation binary already exists: %s" % dockerBinaryPath)
-    #endIf
   #endDef
   
   
@@ -1533,7 +1628,7 @@ class Bootstrap(object):
         TR.info(methodName,"ansible-playbook: %s completed." % playbookPath)
       #endIf
     except Exception as e:
-      TR.error(methodName,"Error calling ansible-playbook: %s" % e, e)
+      TR.error(methodName,"ERROR: %s" % e, e)
       raise
     #endTry    
   #endDef
@@ -1608,7 +1703,7 @@ class Bootstrap(object):
     manifestTemplatePath = os.path.join(self.home,"config","efs","manifest-template.yaml")
     rbacTemplatePath = os.path.join(self.home,"config","efs","rbac-template.yaml")
     serviceAccountPath = os.path.join(self.home,"config","efs","service-account.yaml")
-    configEFS = ConfigureEFS(region=self.AWSRegion,
+    configEFS = ConfigureEFS(region=self.region,
                              stackId=self.bootStackId,
                              playbookPath=playbookPath,
                              varTemplatePath=varTemplatePath,
@@ -1663,15 +1758,30 @@ class Bootstrap(object):
   #endDef
   
 
-  def configureInception(self):
+  def configureInception(self, installMap):
     """
       Do the pre-installation steps of getting the inception meta-data from the inception image
       and moving the files into place for hosts, ssh_key, and config.yaml
       
+      The installMap holds the name of the install image and the Docker inception image.
     """
     methodName = "configureInception"
     
     TR.info(methodName,"IBM Cloud Private Inception configuration started.")
+    
+    if (not installMap):
+      raise MissingArgumentException("The installMap cannot be empty or None.")
+    #endIf
+    
+    dockerImage = installMap.get('inception-image-name')
+    if (not dockerImage):
+      raise ICPInstallationException("The installMap has no value for 'inception-image-name'")
+    #endIf
+    
+    imageTarBallName = installMap.get('icp-base-install-archive')
+    if (not imageTarBallName):
+      raise ICPInstallationException("The installMap has no value for 'icp-base-install-archive'")
+    #endIf
     
     if (not os.path.exists(self.icpHome)):
       os.makedirs(self.icpHome)
@@ -1681,20 +1791,21 @@ class Bootstrap(object):
       TR.info(methodName,"Extracting ICP meta data from the inception container to %s" % self.icpHome)
       
       if (TR.isLoggable(Level.FINER)):
-        TR.finer(methodName,"Invoking: docker run -v %s:/data -e LICENSE=accept %s cp -r cluster /data" % (self.icpHome,self.InceptionImageName))
+        TR.finer(methodName,"Invoking: docker run -v %s:/data -e LICENSE=accept %s cp -r cluster /data" % (self.icpHome,dockerImage))
       #endIf
       
-      self.dockerClient.containers.run(self.InceptionImageName, 
+      self.dockerClient.containers.run(dockerImage, 
                                        volumes={self.icpHome: {'bind': '/data', 'mode': 'rw'}}, 
                                        environment={'LICENSE': 'accept'},
                                        command="cp -r cluster /data")
       
     except Exception as e:
-      raise ICPInstallationException("ERROR invoking: 'docker run -v %s:/data -e LICENSE=accept %s cp -r cluster /data' - Exception: %s" % (self.icpHome,self.InceptionImageName,e))
+      raise ICPInstallationException("ERROR invoking: 'docker run -v %s:/data -e LICENSE=accept %s cp -r cluster /data' - Exception: %s" % (self.icpHome,dockerImage,e))
     #endTry
     
+    # NOTE: The just run docker command creates the cluster directory in icpHome
     os.mkdir("%s/cluster/images" % self.icpHome)
-    shutil.move("/tmp/icp-install-archive.tgz","%s/cluster/images/%s" % (self.icpHome,self.icpInstallImageFileName))
+    shutil.move("/tmp/icp-install-archive.tgz","%s/cluster/images/%s" % (self.icpHome,imageTarBallName))
     shutil.copyfile("/root/hosts", "%s/cluster/hosts" % self.icpHome)
     shutil.copyfile("/root/config.yaml", "%s/cluster/config.yaml" % self.icpHome)
     shutil.copyfile("/root/.ssh/id_rsa", "%s/cluster/ssh_key" % self.icpHome)
@@ -1824,7 +1935,7 @@ class Bootstrap(object):
   #endDef
   
   
-  def installICPFixpack(self):
+  def installICPFixpack(self, installMap):
     """
       Install the ICP fixpack.
       
@@ -1860,7 +1971,7 @@ class Bootstrap(object):
   #endDef
   
   
-  def installICPWithFixpack(self):
+  def installICPWithFixpack(self, installMap):
     """
       Install ICP with the inception fixpack image and install the ICP fixpack.
       
@@ -1886,10 +1997,20 @@ class Bootstrap(object):
     
     TR.info(methodName,"STARTED IBM Cloud Private installation.")
 
+    imageName = installMap.get('inception-image-name')
+    if (not imageName):
+      raise ICPInstallationException("The given installMap does not have a value for 'inception-image-name'")
+    #endIf
+    
+    commandString = installMap.get('inception-command')
+    if (not commandString):
+      raise ICPInstallationException("The given installMap does not have a value for 'inception-command'")
+    #endIf
+    
     # NOTE: The ICP inception install generates a log in <icp_home>/cluster/logs
-    self.runInceptionInstall(self.InceptionImageName,self.InceptionInstallCommandString,logFilePath=None)
+    self.runInceptionInstall(imageName,commandString,logFilePath=None)
 
-    self.installICPFixpack()
+    self.installICPFixpack(installMap)
     TR.info(methodName,"COMPLETED IBM Cloud Private installation.")
 
   #endDef
@@ -1905,16 +2026,18 @@ class Bootstrap(object):
     
     TR.info(methodName, "STARTED Helm installation and configuration.")
     
-    configHelm = ConfigureHelm(self.ClusterDNSName)
+    configHelm = ConfigureHelm(**IntrinsicVariables)
     configHelm.installAndConfigureHelm()
     
     TR.info(methodName, "COMPLETED Helm installation and configuration.")
   #endDef 
   
   
-  def installICP(self):
+  def installICP(self, installMap):
     """
-      Install ICP.
+      Install ICP using the given installMap.
+      
+      The installMap has the ICP inception Docker image name and the inception command.
       
       It is assumed all the pre-installation configuration steps have been completed.
     """
@@ -1922,7 +2045,17 @@ class Bootstrap(object):
 
     TR.info(methodName,"IBM Cloud Private installation started.")
 
-    self.runInceptionInstall(self.InceptionImageName,self.InceptionInstallCommandString,logFilePath=None)
+    imageName = installMap.get('inception-image-name')
+    if (not imageName):
+      raise ICPInstallationException("The given installMap does not have a value for 'inception-image-name'")
+    #endIf
+    
+    commandString = installMap.get('inception-command')
+    if (not commandString):
+      raise ICPInstallationException("The given installMap does not have a value for 'inception-command'")
+    #endIf
+    
+    self.runInceptionInstall(imageName,commandString,logFilePath=None)
 
     TR.info(methodName,"IBM Cloud Private installation completed.")
     
@@ -2050,9 +2183,42 @@ class Bootstrap(object):
       r = requests.put(self.installCompletedEventURL,json=status)
       TR.info(methodName,"Install completed signal sent. Return status: %s" % r.status_code)
     except Exception, e:
-      TR.error(methodName,"Exception: %s" % e, e)
+      TR.error(methodName,"ERROR: %s" % e, e)
       self.rc = 1
     #endTry
+  #endDef
+  
+  
+  def installables(self, installablesPath):
+    """
+      Install all of the installables defined in the given installablesPath directory.
+      
+      Each directory in installablesPath holds .yaml files of kind "helm" and "kubectl" 
+      that define the installation of something using a helm chart.  The kubectl that 
+      may be defined creates kubernetes objects that may be needed by the thing that 
+      got installed.
+      
+    """
+    methodName = 'installables'
+
+    installables = os.listdir(installablesPath)
+    for installable in installables:
+      ipath = os.path.join(installablesPath,installable)
+      if (os.path.isdir(ipath)): 
+        try:
+          TR.info(methodName,"Executing kubectl at: %s" % ipath)
+          kubeHelper = KubeHelper(ipath,**IntrinsicVariables)
+          kubeHelper.invokeCommands()
+          TR.info(methodName,"Completed kubectl at: %s" % ipath)
+          TR.info(methodName,"Executing helm at: %s" % ipath)
+          helmHelper = HelmHelper(ipath,**IntrinsicVariables)
+          helmHelper.invokeCommands()
+          TR.info(methodName,"Completed helm at: %s" % ipath)
+        except Exception, e:
+          TR.error(methodName,"ERROR: %s" % e, e)
+        #endTry
+      #endIf
+    #endFor
   #endDef
   
   
@@ -2104,7 +2270,7 @@ class Bootstrap(object):
         raise MissingArgumentException("The AWS region (--region) must be provided.")
       #endIf
       
-      self.AWSRegion = region
+      self.region = region
       TR.info(methodName,"AWS region: %s" % region)
       
       role = cmdLineArgs.get('role')
@@ -2132,6 +2298,9 @@ class Bootstrap(object):
       # Turn off source/dest check on all cluster EC2 instances
       self._disableSourceDestCheck()    
      
+      self.installMap = self.loadInstallMap(version=self.ICPVersion, region=self.region)
+      self.getInstallImages(self.installMap)
+      
       # Wait for cluster nodes to be ready for the installation to proceed.
       # Waiting to make sure all cluster nodes have added the boot node
       # SSH public key to their SSH authorized_keys file.
@@ -2139,8 +2308,6 @@ class Bootstrap(object):
       
       self.createSSHKeyScanHostsFile()
       self.sshKeyScan()
-      
-      self.getInstallImages()
       
       # Add Route53 DNS aliases for the proxy ELB
       # TODO: Leave this commented out until we figure out how to delete the entry when the stack is deleted.
@@ -2162,16 +2329,21 @@ class Bootstrap(object):
       
       self.loadICPImages(self.imageArchivePath)
 
-      self.configureInception()
+      self.configureInception(self.installMap)
 
       # Wait for notification from all nodes that the local ICP image load has completed.
       self.syncWithClusterNodes(desiredState='READY')
       
-      if (Utilities.toBoolean(self.InstallICPFixpack)):
-        self.installICPWithFixpack()             
-      else:
-        self.installICP()        
+      # TODO - Reinstate code to deal with fixpacks.  For now, we don't need it.
+      # Whether or not there is a fixpack will be something coming from the install map (installMap).
+      # All the fixpack details will be in the installMap.
+      #if (Utilities.toBoolean(self.InstallICPFixpack)):
+      #  self.installICPWithFixpack(self.installMap)             
+      #else:
+      # self.installICP(self.installMap)        
       #endIf
+      
+      self.installICP(self.installMap) 
 
       # Install kubectl includes configuration of a permanent login context so this
       # needs to happen after the installation of ICP to get configuration artifacts.
@@ -2183,14 +2355,28 @@ class Bootstrap(object):
       # Install of Cloudctl needs to happen after ICP is installed and running. 
       self.installCloudctl()
       
+      clusterCertPath = os.path.join(self.home,"cluster-ca.crt")
+      self.getClusterCACert(clusterCertPath,self.ClusterDNSName)
+      IntrinsicVariables['HelmHome'] = os.path.join(self.home,".helm")     
+      IntrinsicVariables['ClusterCertPath'] = clusterCertPath
+      # The Kube paths are defined in the ConfigureKubectl class
+      IntrinsicVariables['KubeKeyPath'] = os.path.join(self.home,".kube","kubecfg.key")
+      IntrinsicVariables['KubeCertPath'] = os.path.join(self.home,".kube","kubecfg.crt")
+      IntrinsicVariables['HelmKeyPath'] = os.path.join(self.pkiDirectory,"helm","admin.key")
+      IntrinsicVariables['HelmCertPath'] = os.path.join(self.pkiDirectory,"helm","admin.crt")
       # Install and configure Helm
       self.installHelm()
+      
+      # Install anything that is defined in the "installables" directory
+      if (self.installablesPath):
+        self.installables(self.installablesPath)
+      #endIf
     
     except ExitException:
       pass # ExitException is used as a "goto" end of program after emitting help info
 
     except Exception, e:
-      TR.error(methodName,"Exception: %s" % e, e)
+      TR.error(methodName,"ERROR: %s" % e, e)
       self.rc = 1
 
     finally:
@@ -2201,7 +2387,7 @@ class Bootstrap(object):
         # Copy icpHome/logs to the S3 bucket for logs.
         self.exportLogs(self.ICPDeploymentLogsBucketName,self.rootStackName,"%s/cluster/logs" % self.icpHome)
       except Exception, e:
-        TR.error(methodName,"Exception: %s" % e, e)
+        TR.error(methodName,"ERROR: %s" % e, e)
         self.rc = 1
       #endTry
 
@@ -2213,7 +2399,7 @@ class Bootstrap(object):
 
    
       if (self.rc == 0):
-        TR.info(methodName,"BOOT0103I END Boostrap AWS ICP Quickstart.  Elapsed time (hh:mm:ss): %d:%02d:%02d" % (eth,etm,ets))
+        TR.info(methodName,"BOOT0103I SUCCESS END Boostrap AWS ICP Quickstart.  Elapsed time (hh:mm:ss): %d:%02d:%02d" % (eth,etm,ets))
       else:
         TR.info(methodName,"BOOT0104I FAILED END Boostrap AWS ICP Quickstart.  Elapsed time (hh:mm:ss): %d:%02d:%02d" % (eth,etm,ets))
       #endIf
@@ -2222,7 +2408,7 @@ class Bootstrap(object):
         # Copy the bootstrap logs to the S3 bucket for logs.
         self.exportLogs(self.ICPDeploymentLogsBucketName,self.rootStackName,self.logsHome)
       except Exception, e:
-        TR.error(methodName,"Exception: %s" % e, e)
+        TR.error(methodName,"ERROR: %s" % e, e)
         self.rc = 1
       #endTry
       

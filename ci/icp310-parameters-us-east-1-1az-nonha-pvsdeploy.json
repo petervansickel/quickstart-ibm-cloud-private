@@ -16,56 +16,24 @@
     "ParameterValue": "m5.xlarge"
   },
   {
-    "ParameterKey": "CFNTemplateVersion",
-    "ParameterValue": "0.9.4"
-  },
-  {
     "ParameterKey": "CustomArtifactsPath",
     "ParameterValue": "custom/aws.zip"
   },
   {
-    "ParameterKey": "DockerInstallBinaryPath",
-    "ParameterValue": "icp-docker-18.03.1_x86_64.bin"
-  },
-  {
     "ParameterKey": "ExternalSSHLocation",
-    "ParameterValue": "70.63.131.132/32"
-  },
-  {
-    "ParameterKey": "ICPArchiveBucketName",
-    "ParameterValue": "icp-3-1-0-us-east-1"
-  },
-  {
-    "ParameterKey": "ICPArchivePath",
-    "ParameterValue": "ibm-cloud-private-x86_64-3.1.0.tar.gz"
+    "ParameterValue": "73.225.52.165/32"
   },
   {
     "ParameterKey": "ICPBootNodeScriptPackagePath",
-    "ParameterValue": "scripts/aws-icp-bootstrap-v0.9.4.zip"
+    "ParameterValue": "scripts/aws-icp-bootstrap.zip"
   },
   {
     "ParameterKey": "ICPClusterNodeScriptPackagePath",
-    "ParameterValue": "scripts/aws-icp-nodeinit-v0.9.4.zip"
+    "ParameterValue": "scripts/aws-icp-nodeinit.zip"
   },
   {
     "ParameterKey": "ICPDeploymentLogsBucketName",
     "ParameterValue": "aws-icp-quickstart-logs-us-east-1"
-  },
-  {
-    "ParameterKey": "ICPScriptBucketName",
-    "ParameterValue": "aws-icp-quickstart-us-east-1"
-  },
-  {
-    "ParameterKey": "ICPVersion",
-    "ParameterValue": "3.1.0"
-  },
-  {
-    "ParameterKey": "InceptionImageName",
-    "ParameterValue": "ibmcom/icp-inception-amd64:3.1.0-ee"
-  },
-  {
-    "ParameterKey": "InceptionInstallCommandString",
-    "ParameterValue": "install -v"
   },
   {
     "ParameterKey": "KeyFilePath",
@@ -106,6 +74,10 @@
   {
     "ParameterKey": "PublicSubnets",
     "ParameterValue": "10.10.20.0/24"
+  },
+  {
+    "ParameterKey": "QSS3BucketName",
+    "ParameterValue": "aws-icp-quickstart-us-east-1"
   },
   {
     "ParameterKey": "ResourceOwner",

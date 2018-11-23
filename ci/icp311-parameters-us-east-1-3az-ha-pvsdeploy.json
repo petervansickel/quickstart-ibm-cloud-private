@@ -21,7 +21,11 @@
   },
   {
     "ParameterKey": "ExternalSSHLocation",
-    "ParameterValue": "73.225.52.165/32"
+    "ParameterValue": "108.39.252.97/32"
+  },
+  {
+    "ParameterKey": "ICPArchiveBucketName",
+    "ParameterValue": "icp-3-1-0-us-east-1"
   },
   {
     "ParameterKey": "ICPBootNodeScriptPackagePath",
@@ -36,6 +40,10 @@
     "ParameterValue": "aws-icp-quickstart-logs-us-east-1"
   },
   {
+    "ParameterKey": "ICPVersion",
+    "ParameterValue": "3.1.1"
+  },
+  {
     "ParameterKey": "KeyFilePath",
     "ParameterValue": "keys/additional-keys"
   },
@@ -45,7 +53,7 @@
   },
   {
     "ParameterKey": "ManagementNodeCount",
-    "ParameterValue": "3"
+    "ParameterValue": "2"
   },
   {
     "ParameterKey": "ManagementNodeInstanceType",
@@ -65,7 +73,7 @@
   },
   {
     "ParameterKey": "ProxyNodeCount",
-    "ParameterValue": "3"
+    "ParameterValue": "2"
   },
   {
     "ParameterKey": "ProxyNodeInstanceType",
@@ -89,7 +97,7 @@
   },
   {
     "ParameterKey": "WorkerNodeCount",
-    "ParameterValue": "9"
+    "ParameterValue": "4"
   },
   {
     "ParameterKey": "WorkerNodeInstanceType",
