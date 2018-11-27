@@ -11,7 +11,7 @@ Summary of the what needs to be done without the details:
 
 The remainder of this document provides the details you need to execute a successful deployment.
 
-- Clone the git repository with the templates and script packages and other AWS QuickStart artifacts. *TODO:* Need more detail here.  (Currently this git repository is at: https://github.ibm.com/pvs/aws-icp-quickstart  You need to contact Peter Van Sickel to get access if you don't have access.  In the near future this should be something publicly available.)
+- Clone the git repository with the templates and script packages and other AWS QuickStart artifacts. *TODO:* Need more detail here.  (Currently this git repository is at: https://github.ibm.com/pvs/aws-icp-quickstart)
 
 - Create an S3 bucket in the region where you want to deploy the ICP cluster.  This bucket is referred to as the `ICP Archive Bucket` and you will provide the name of that bucket in the `ICPArchiveBucketName` input parameter.
 - Copy the Docker installation binary file, that comes with the version of ICP you are going to install, to the `ICP Archive Bucket` bucket.  The path to the Docker installation binary file is provided in the `DockerInstallBinaryPath` input parameter.

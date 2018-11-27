@@ -1,7 +1,4 @@
-
-
-# Implementation details
-
+# IBM Cloud Private Deployment Automation Implementation Details
 
 Each ICP node has an ICPRole tag that is used by the bootstrapping
 scripts to determine the role of the node.  The following values

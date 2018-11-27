@@ -9,7 +9,7 @@
   },
   {
     "ParameterKey": "ApplicationDomains",
-    "ParameterValue": "myapps.example.com"
+    "ParameterValue": "myapps.icp-test.com"
   },
   {
     "ParameterKey": "BootNodeInstanceType",
@@ -82,6 +82,10 @@
   {
     "ParameterKey": "ResourceOwner",
     "ParameterValue": "Peter.VanSickel"
+  },
+  {
+    "ParameterKey": "VPCDomain",
+    "ParameterValue": "icp-test.com"
   },
   {
     "ParameterKey": "VPCName",

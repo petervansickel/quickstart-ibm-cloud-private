@@ -71,6 +71,10 @@ History:
   helm commands defined by yaml files in a command directory.  Refactored out the common code to
   CommandHelper and specialized KubectlHelper and HelmHelper classes.  (Not fully tested) Works for
   Transformation Advisor and its artifacts.
+  
+  24 NOV 2018 - pvs Added BaseException to make sure any exception is caught.  Trying to correct 
+  behavior where under certain conditions it appears that the main() is not exiting "cleanly" and
+  the follow-on code in the bootstrap.sh and the UserData of the boot node is not getting executed.
 """
 
 from Crypto.PublicKey import RSA
@@ -2086,12 +2090,17 @@ class Bootstrap(object):
         #endIf
       else:
         for fileName in logFileNames:
-          s3Key = "%s/%s/%s/%s" % (stackName,self.role,self.fqdn,fileName)
           bodyPath = os.path.join(logsDirectoryPath,fileName)
-          if (TR.isLoggable(Level.FINE)):
-            TR.fine(methodName,"Exporting log: %s to S3: %s:%s" % (bodyPath,bucketName,s3Key))
+          if (os.path.isfile(bodyPath)):
+            s3Key = "%s/%s/%s/%s" % (stackName,self.role,self.fqdn,fileName)
+            
+            if (TR.isLoggable(Level.FINE)):
+              TR.fine(methodName,"Exporting log: %s to S3: %s:%s" % (bodyPath,bucketName,s3Key))
+            #endIf
+            with open(bodyPath, 'r') as bodyFile:
+              self.s3.put_object(Bucket=bucketName, Key=s3Key, Body=bodyFile)
+            #endWith
           #endIf
-          self.s3.put_object(Bucket=bucketName, Key=s3Key, Body=bodyPath)
         #endFor
       #endIf
     #endIf
@@ -2377,6 +2386,10 @@ class Bootstrap(object):
 
     except Exception, e:
       TR.error(methodName,"ERROR: %s" % e, e)
+      self.rc = 1
+      
+    except BaseException, e:
+      TR.error(methodName,"UNEXPECTED ERROR: %s" % e, e)
       self.rc = 1
 
     finally:

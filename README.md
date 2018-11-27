@@ -6,6 +6,8 @@ This README is a table of contents to detailed information for deploying IBM Clo
 
 [ICP installation parameters](docs/input-parameters.md)
 
+[Using TaskCat](docs/using-taskcat.md)
+
 [Troubleshooting](docs/when-things-go-wrong.md)
 
 [Limitations](docs/limitiations.md)

@@ -9,7 +9,7 @@
   },
   {
     "ParameterKey": "ApplicationDomains",
-    "ParameterValue": "myapps.example.com"
+    "ParameterValue": "myapps.icp-test.com"
   },
   {
     "ParameterKey": "BootNodeInstanceType",
@@ -21,7 +21,7 @@
   },
   {
     "ParameterKey": "ExternalSSHLocation",
-    "ParameterValue": "73.225.52.165/32"
+    "ParameterValue": "108.39.143.97/32"
   },
   {
     "ParameterKey": "ICPBootNodeScriptPackagePath",
@@ -84,12 +84,16 @@
     "ParameterValue": "Peter.VanSickel"
   },
   {
+    "ParameterKey": "VPCDomain",
+    "ParameterValue": "icp-test.com"
+  },
+  {
     "ParameterKey": "VPCName",
     "ParameterValue": "ICP310-VPC"
   },
   {
     "ParameterKey": "WorkerNodeCount",
-    "ParameterValue": "9"
+    "ParameterValue": "3"
   },
   {
     "ParameterKey": "WorkerNodeInstanceType",

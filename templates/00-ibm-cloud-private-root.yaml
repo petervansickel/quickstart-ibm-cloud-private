@@ -17,6 +17,9 @@ Metadata:
           default: Deployment control parameters
         Parameters:
           - InceptionTimeout
+          - InstallationTimeout
+          - WhichClusterLBAddress
+          - WhichProxyLBAddress
 
       - Label:
           default: IBM Cloud Private configuration parameters
@@ -63,9 +66,17 @@ Metadata:
       - Label:
           default: Network parameters
         Parameters:
+          - AvailabilityZoneCount
+          - AvailabilityZones
           - ExternalApplicationLocation
           - ExternalICPAdminLocation
           - ExternalSSHLocation
+          - PrivateSubnetCIDR
+          - PrivateSubnets
+          - PublicSubnetCIDR
+          - PublicSubnets
+          - VPCCIDR
+          - VPCDomain
 
       - Label:
           default: Application workload configuration
@@ -79,12 +90,16 @@ Metadata:
         default: Application domains
       ApplicationStorageMountPoint:
         default: Application storage mount point
+      AvailabilityZoneCount:
+        default: Availability zone count
+      AvailabilityZones:
+        default: Availability zones
       BootNodeInstanceType:
         default: Boot node EC2 instance type
       ClusterCADomain:
         default: Cluster Certificate Authority domain
       ClusterCIDR:
-        default: ICP cluster network CIDR
+        default: Cluster network CIDR
       ClusterDomain:
         default: Cluster domain
       ClusterName:
@@ -125,6 +140,12 @@ Metadata:
         default: Master node count
       ManagementNodeCount:
         default: Management node count
+      PrivateSubnetCIDR:
+        default: Private subnet CIDR
+      PrivateSubnets:
+        default: Private subnets
+      PublicSubnetCIDR:
+        default: Public subnet CIDR
       ProxyNodeInstanceType:
         default: Proxy node EC2 instance type
       ProxyNodeCount:
@@ -143,6 +164,10 @@ Metadata:
         default: Vulnerability Advisor node EC2 instance type
       VulnerabilityAdvisorNodeCount:
         default: Vulnerability Advisor node count
+      WhichClusterLBAddress:
+        default: Which cluster load balancer address
+      WhichProxyLBAddress:
+        default: Which proxy load balancer address
       WorkerNodeInstanceType:
         default: Worker node EC2 instance type
       WorkerNodeCount:
@@ -222,19 +247,9 @@ Parameters:
     Type: String
     Default: cluster.local
 
-  ClusterLBAddress:
-    Description: >-
-      The value to use for the cluster load balancer address.  This value is used to drive the logic in the bootstrap script.
-    Type: String
-    AllowedValues:
-      - UseMasterELBAddress
-      - UseMasterELBName
-      - UseClusterName
-    Default: 'UseClusterName'
-
   ClusterName:
     Description: >-
-      The name of the cluster.
+      The name of the cluster. The cluster name is combined with the VPC domain (VPCDomain) to form the cluster DNS name (ClusterDNSName). An alias record is created in Route53 that maps the ClusterDNSName to the master node load balancer DNS name.
     Type: String
     Default: mycluster
 
@@ -323,10 +338,10 @@ Parameters:
       The name of the S3 bucket where ICP stack deployment logs are to be exported. The deployment logs provide a record of the boot strap scripting actions and are useful for problem determination if the deployment fails in some way.
     Type: String
 
-  # TODO - We can likely eliminate the InceptionTimeout and use only the ICPInstallationTimeout.
-  ICPInstallationTimeout:
+  # TODO - We can likely eliminate the InceptionTimeout and use only the InstallationTimeout.
+  InstallationTimeout:
     Description: >-
-      The timeout (in seconds) associated with the installation and configuration of the ICP cluster, from start to finish. The ICPInstallationTimeout must be equal or greater than the InceptionTimeout. The ICPInstallationTimeout needs to be sufficient to allow the bootstrap installation script to complete.  See InceptionTimeout for some guidance on expected installation time.
+      The timeout (in seconds) associated with the installation and configuration of the ICP cluster, from start to finish. The InstallationTimeout must be equal or greater than the InceptionTimeout. The InstallationTimeout needs to be sufficient to allow the bootstrap installation script to complete.  See InceptionTimeout for some guidance on expected installation time.
     Type: Number
     Default: 7200
 
@@ -340,7 +355,7 @@ Parameters:
 
   InceptionTimeout:
     Description: >-
-      The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  For a small HA cluster (12 nodes) the inception process typically completes the installation in about 60 minutes. The start-to-finish installation time is on the order of 75 minutes for such a cluster.  The InceptionTimeout should be smaller than the ICPInstallationTimeout.
+      The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  For a small HA cluster (12 nodes) the inception process typically completes the installation in about 60 minutes. The start-to-finish installation time is on the order of 75 minutes for such a cluster.  The InceptionTimeout should be smaller than the InstallationTimeout.
     Type: Number
     Default: 7200
 
@@ -506,6 +521,16 @@ Parameters:
       - m5d.2xlarge
       - m5d.4xlarge
     ConstraintDescription: Must be a valid EC2 instance type.
+
+  WhichClusterLBAddress:
+    Description: >-
+      The value to use for the cluster load balancer address.  This value is used to drive the logic in the bootstrap script.
+    Type: String
+    AllowedValues:
+      - UseMasterELBAddress
+      - UseMasterELBName
+      - UseClusterName
+    Default: 'UseClusterName'
 
   WhichProxyLBAddress:
     Description: >-
@@ -708,7 +733,6 @@ Resources:
         ClusterDNSName: !Join ['.', [!Ref ClusterName, !Ref VPCDomain]]
         ClusterDomain: !Ref ClusterDomain
         ClusterHostedZoneId: !Ref ClusterHostedZone
-        ClusterLBAddress: !Ref ClusterLBAddress
         ClusterName: !Ref ClusterName
         ClusterPKIBucketName: !Ref ClusterPKIBucketName
         ClusterPKIRootPath: !Ref ClusterPKIRootPath
@@ -729,6 +753,7 @@ Resources:
         KeyName: !Ref KeyName
         MasterNodeCount: !Ref MasterNodeCount
         ProxyELBHostedZoneID: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerHostedZoneID
+        WhichClusterLBAddress: !Ref WhichClusterLBAddress
         WhichProxyLBAddress: !Ref WhichProxyLBAddress
         ProxyNodeLoadBalancerName: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerDNSName
         PublicSubnetIds: !GetAtt PublicSubnetStack.Outputs.PublicSubnetIds
@@ -871,7 +896,7 @@ Resources:
     Properties:
       Count: 1
       Handle: !Ref InstallationCompletedHandle
-      Timeout: !Ref ICPInstallationTimeout
+      Timeout: !Ref InstallationTimeout
 
 
 Outputs:

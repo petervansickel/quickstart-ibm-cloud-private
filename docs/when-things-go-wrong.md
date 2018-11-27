@@ -2,9 +2,30 @@
 
 This section captures common deployment problems and the solution.
 
+## Log files of interest
+
+Boot node log files:
+- `/root/logs/bootstrap.log`
+- `/var/log/syslog`
+- The other CFN logs in `/var/log/`, e.g., `cfn-init.log`.
+- The ICP inception installation log in: `/opt/icp/<version>/cluster/logs/`
+  - `<version>` is the ICP version, e.g., `3.1.0`, `3.1.1`.
+  - The installation log name is in the form: `install.log.<timestamp>`
+
+Cluster node log files:
+- `/root/logs/nodeinit.log`
+- `/var/log/syslog`
+- The other CFN logs in `/var/log/`
+
+If something is so misconfigured that the `bootstrap` or `nodeinit` script does not run and generate a log, then the best sources of problem determination information are in the log files in `/var/log/`, with `syslog` being a good place to find root causes for errors. The CloudFormation (CFN) logs are generally easier to read than `syslog` but they don't always have the content that `syslog` has.
+
+As long as `bootstrap.py` (on the boot node) and `nodeinit.py` (on the cluster nodes) gets started, the respective log file will have a full stack dump of any errors encountered.
+
+Keep in mind you can only get to the cluster nodes via `ssh` from the boot node.  It may be that an error occurs before `ssh` can be configured to work between the boot node and the cluster nodes. If that is the case, then the templates need to be reconfigured to use the public subnet(s) for the cluster nodes and the EC2 key-pair will need to be added to at least one of the cluster node instances in order to `ssh` onto the node to see what is going wrong such that `nodeinit.py` is not even getting started or why `nodeinit.py` is failing.   
+
 ## Cannot SSH to the boot node or any of the cluster nodes
 
-The deployment has gotten to the point where the various stack templates have reached a state of `CREATE_COMPLETE`, yet when you attempt `ssh` to the public DNS name of the boot node, or any of the cluster nodes, the connection does not occur and eventually the attempt times out.
+The deployment has gotten to the point where the various stack templates have reached a state of `CREATE_COMPLETE`, yet when you attempt `ssh` to the public DNS name of the boot node, the connection does not occur and eventually the attempt times out.
 
 **Solution:**
 
@@ -20,11 +41,11 @@ When you attempt to access the ICP management console, there is a long wait that
 
 **Solution:**
 
-*TODO:* Need to investigate further.  The `ClusterCADomain` value may be what matters.  It just so happens that `ClusterCADomain` defaults to `ClusterName.ClusterDomain`.  The `ClusterCADomain` value is used to create the TLS PKI artifacts.  And that defaults to `mycluster.icp`.  But if the deployer sets a specific value for `ClusterCADomain` a misconfiguration could occur. The CN value of the generated TLS certificates for the cluster will not be the same as the value entered in Route53 that gets an alias to the master node ELB public DNS name.
+The CN value of the generated TLS certificates for the cluster will not be the same as the value entered in Route53 that gets an alias to the master node ELB public DNS name.
 
-You need to put an entry your laptop `/etc/hosts` file that maps the master node ELB public DNS name to `clustername.clusterdomain`, for example:
+You need to put an entry your laptop `/etc/hosts` file that maps the master node ELB public DNS name to the ClusterDNSName which is formed by joining the ClusterName to the VPCDomain. If ClusterName has a value of `mycluster` and VPCDomain has a value of `icp-test.com` then the ClusterDNSName will be `mycluster.icp-test.com`.  Use `nslookup` on the master node ELB public DNS name to get an IP address.  If the deployment is using multiple Availability Zones, then there will be multiple IP addresses. Any one of them will work. For example:
 ```
-54.241.72.233      mycluster.icp
+54.241.72.233      mycluster.icp-test.com
 ```
 
 You also need to be sure the `ExternalICPAdminSecurityGroup` has an inbound rule that permits the IP address of your laptop to access the cluster on port 8443 (and port 8080 if you want to use that port).  
@@ -36,7 +57,6 @@ The `ExternalICPAdminSecurityGroup` inbound rules can be edited to allow your la
 A Route53 hosted zone must include the value of `clustername.clusterdomain` (or `ClusterCADomain` (TBD)) mapped to the public DNS name of the master node ELB. To confirm, open the admin page for the AWS Route53 service and clicked on the hosted zones.
 
 *NOTE:* Try a different browser.  FireFox Quantum version 60.2 gets stuck in a TLS handshake when interacting with the ICP management console.  Chrome works just fine with the usual warning about the PKI certificate.
-
 
 
 ## After deployment, management console OAuth error: redirect URI not valid

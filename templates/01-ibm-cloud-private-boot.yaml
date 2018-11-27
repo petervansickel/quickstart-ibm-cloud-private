@@ -170,15 +170,6 @@ Parameters:
       The HostedZone resource ID for the ICP cluster.  The ClusterHostedZoneID is used by the bootstrap script to create alias record entries for the Proxy ELB DNS name.
     Type: String
 
-  ClusterLBAddress:
-    Description: >-
-      The value to use for the cluster load balancer address.  This value is used to drive the logic in the bootstrap script.
-    Type: String
-    AllowedValues:
-      - UseMasterELBAddress
-      - UseMasterELBName
-      - UseClusterName
-
   ClusterName:
     Description: >-
       The name of the cluster.
@@ -283,6 +274,15 @@ Parameters:
     Description: >-
       The Proxy ELB HostedZone resource ID is used by the bootstrap script to create alias record entries for the Proxy ELB DNS name.
     Type: String
+
+  WhichClusterLBAddress:
+    Description: >-
+      The value to use for the cluster load balancer address.  This value is used to drive the logic in the bootstrap script.
+    Type: String
+    AllowedValues:
+      - UseMasterELBAddress
+      - UseMasterELBName
+      - UseClusterName
 
   WhichProxyLBAddress:
     Description: >-

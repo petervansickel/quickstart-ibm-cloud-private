@@ -226,14 +226,14 @@ class ConfigureICP(object):
       raise ICPInstallationException("An ELB with a Name tag of MasterNodeLoadBalancer was not found.")
     #endIf
 
-    # This next block supports different ways to set up the ClusterLBAddress.
+    # This next block supports different ways to set up the WhichClusterLBAddress.
     # It is a debugging ploy. I got tired of changing the script to try out different options.
-    if (self.ClusterLBAddress == 'UseMasterELBAddress'):
+    if (self.WhichClusterLBAddress == 'UseMasterELBAddress'):
       # NOTE: ICP 2.1.0.3 can't handle a DNS name in the cluster_lb_address config.yaml attribute.
       masterELB = self.masterELBAddress 
-    elif (self.ClusterLBAddress == 'UseMasterELBName'):
+    elif (self.WhichClusterLBAddress == 'UseMasterELBName'):
       masterELB = self.getLoadBalancerDNSName(stackIds,elbName="MasterNodeLoadBalancer")
-    elif (self.ClusterLBAddress == 'UseClusterName'):
+    elif (self.WhichClusterLBAddress == 'UseClusterName'):
       # In the root CloudFormation template, an alias entry is created in the Route53 DNS 
       # that maps the master ELB public DNS name to the cluster CN, i.e., the ClusterName.VPCDomain.
       # Setting the cluster_lb_address to the cluster_CA_domain avoids OAuth issues in mgmt console.
