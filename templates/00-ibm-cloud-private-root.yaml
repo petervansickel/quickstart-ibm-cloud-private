@@ -361,7 +361,7 @@ Parameters:
 
   KeyFilePath:
     Description: >-
-      Path to a file in the ICP script bucket (QSS3BuckeName) with public keys for administrators who need SSH access to the boot node. (Optional)
+      Path to a file in the ICP script bucket (`QSS3BuckeName`) with public keys for administrators who need SSH access to the boot node. The public keys in the file in S3 at the KeyFilePath are copied to the `authorized_keys` file of the `ubuntu` user on the boot node. (Optional)
     Type: String
     Default: ''
 
