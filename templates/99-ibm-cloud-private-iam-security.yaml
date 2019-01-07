@@ -11,10 +11,38 @@ Parameters:
       The S3 bucket where the cluster PKI artifacts are located. If not provided, self-signed PKI artifacts will be created and used.
     Type: String
 
+  ExternalApplicationLocation:
+    Description: >-
+      The IP address range that can be used to get to ICP Proxy ELB for access to deployed workloads on the ICP worker nodes from the external network.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  ExternalICPAdminLocation:
+    Description: >-
+      The network CIDR for IP addresses that can be used to SSH to the boot node. In single user test situations this can be a /32 CIDR.  Additional values can be added post-deployment from the AWS CloudFormation console.
+    Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
+
   ExternalSSHLocation:
     Description: >-
       The ExternalSSHLocation resource ID from the parent template.
     Type: String
+    MinLength: 9
+    MaxLength: 18
+    AllowedPattern: >-
+      ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
+    ConstraintDescription: >-
+      Must be a valid IP CIDR range of the form x.x.x.x/x.
 
   IBMCloudPrivateVPC:
     Description: >-
@@ -414,16 +442,13 @@ Resources:
                 Effect: Allow
 
           # Needed for the bootstrap script introspection of the stacks
+          # Also for modifying security groups post deployment, once IP addresses are known.
         - PolicyName: EC2AccessPolicy
           PolicyDocument:
             Version: 2012-10-17
             Statement:
               - Action:
-                  - ec2:DescribeStacks
-                  - ec2:DescribeInstances
-                  - ec2:DescribeNetworkInterfaces
-                  # ModifyInstanceAttribute needed to disable source_dest_check
-                  - ec2:ModifyInstanceAttribute
+                  - 'ec2:*'
                 Effect: Allow
                 Resource: '*'
 
@@ -513,23 +538,20 @@ Resources:
           IpProtocol: tcp
           FromPort: 443
           ToPort: 443
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref ExternalApplicationLocation
         - Description: Application ingress controller (HTTP)
           IpProtocol: tcp
           FromPort: 80
           ToPort: 80
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref ExternalApplicationLocation
       Tags:
         - Key: Owner
           Value: !Ref ResourceOwner
 
-  # TODO: Need to confirm that this is the proper approach.
-  # Basing this on the Feng, Chen, Kwong article
-  # I think the CidrIp needs to be wide open because it is
-  # accessed from an ELB for which we don't know its IP until
-  # after deployment.  We could modify the CidrIp post deployment
-  # to be only the ELB IP address and then all traffic would need
-  # to come through the master node ELB.
+  # NOTE: Additional ingress rules are added by the SecurityHelper
+  # in the bootstrap script after deployment once the boot node IP
+  # addresses are known.  The boot node needs access to these ports
+  # on the master node(s).
   ICPMasterSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -541,32 +563,32 @@ Resources:
           IpProtocol: tcp
           FromPort: 8443
           ToPort: 8443
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref ExternalICPAdminLocation
         - Description: Management console (HTTP)
           IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref ExternalICPAdminLocation
         - Description: Kubernetes API server
           IpProtocol: tcp
           FromPort: 8001
           ToPort: 8001
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref ExternalICPAdminLocation
         - Description: Image manager 8500
           IpProtocol: tcp
           FromPort: 8500
           ToPort: 8500
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref ExternalICPAdminLocation
         - Description: Image manager 8600
           IpProtocol: tcp
           FromPort: 8600
           ToPort: 8600
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref ExternalICPAdminLocation
         - Description: Metering server on Master node(s)
           IpProtocol: tcp
           FromPort: 9443
           ToPort: 9443
-          CidrIp: 0.0.0.0/0
+          CidrIp: !Ref ExternalICPAdminLocation
       Tags:
         - Key: Owner
           Value: !Ref ResourceOwner

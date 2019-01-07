@@ -8,24 +8,28 @@
     "ParameterValue": "icpadmin"
   },
   {
-    "ParameterKey": "AvailabilityZoneCount",
-    "ParameterValue": "1"
-  },
-  {
-    "ParameterKey": "AvailabilityZones",
-    "ParameterValue": "us-east-1f"
+    "ParameterKey": "ApplicationDomains",
+    "ParameterValue": "apps.pvs-test.apic-demo.com"
   },
   {
     "ParameterKey": "AppSubdomainPrefix",
     "ParameterValue": "apps"
   },
   {
+    "ParameterKey": "AvailabilityZoneCount",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "AvailabilityZones",
+    "ParameterValue": "ap-northeast-2a"
+  },
+  {
     "ParameterKey": "BootNodeInstanceType",
     "ParameterValue": "m5.xlarge"
   },
   {
-    "ParameterKey": "ExcludedMgmtServices",
-    "ParameterValue": "istio,custom-metrics-adapter"
+    "ParameterKey": "ClusterName",
+    "ParameterValue": "pvscluster"
   },
   {
     "ParameterKey": "ExternalApplicationLocation",
@@ -49,7 +53,11 @@
   },
   {
     "ParameterKey": "ICPDeploymentLogsBucketName",
-    "ParameterValue": "aws-icp-quickstart-logs-us-east-1"
+    "ParameterValue": "aws-icp-quickstart-logs-ap-northeast-2"
+  },
+  {
+    "ParameterKey": "ICPVersion",
+    "ParameterValue": "3.1.0"
   },
   {
     "ParameterKey": "KeyFilePath",
@@ -57,7 +65,7 @@
   },
   {
     "ParameterKey": "KeyName",
-    "ParameterValue": "pvs_key_us_east_1"
+    "ParameterValue": "pvs_key_ap_northeast_2"
   },
   {
     "ParameterKey": "ManagementNodeCount",
@@ -93,23 +101,31 @@
   },
   {
     "ParameterKey": "QSS3BucketName",
-    "ParameterValue": "aws-icp-quickstart-us-east-1"
+    "ParameterValue": "aws-icp-quickstart-ap-northeast-1"
+  },
+  {
+    "ParameterKey": "QSS3KeyPrefix",
+    "ParameterValue": "0.9.6"
   },
   {
     "ParameterKey": "ResourceOwner",
     "ParameterValue": "Peter.VanSickel"
   },
   {
-    "ParameterKey": "VPCName",
-    "ParameterValue": "ICPTest-VPC"
-  },
-  {
     "ParameterKey": "VPCDomain",
-    "ParameterValue": "icp-test.com"
+    "ParameterValue": "apic-demo.com"
   },
   {
-    "ParameterKey": "VulnerabilityAdvisorNodeCount",
-    "ParameterValue": "1"
+    "ParameterKey": "VPCHostedZoneId",
+    "ParameterValue": "Z1TXQISDLGPKT8"
+  },
+  {
+    "ParameterKey": "VPCName",
+    "ParameterValue": "ICP310-VPC"
+  },
+  {
+    "ParameterKey": "VPCSubdomainPrefix",
+    "ParameterValue": "pvs-test"
   },
   {
     "ParameterKey": "WorkerNodeCount",

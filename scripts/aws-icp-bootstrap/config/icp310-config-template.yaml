@@ -26,8 +26,8 @@ etcd_extra_args: ["--grpc-keepalive-timeout=0", "--grpc-keepalive-interval=0", "
 # wait_for_timeout: 600
 
 ## Advanced Settings
-default_admin_user: admin
-default_admin_password: admin
+default_admin_user: ${ADMIN_USER}
+default_admin_password: ${ADMIN_PASSWORD}
 # ansible_user: <username>
 # ansible_become: true
 # ansible_become_password: <password>
@@ -234,9 +234,8 @@ management_services:
 # All values need to be quoted due to the colon in the value.
 image-security-enforcement:
   clusterImagePolicy:
-    - name: "docker.io/ibmcom/*"
     - name: "${CLUSTER_DNS_NAME}:8500/*"
-    - name: "registry.bluemix.net/ibm/*"
+    - name: "docker.io/ibmcom/*"
     - name: "docker.io/hybridcloudibm/*"
     - name: "docker.io/db2eventstore/*"
     - name: "docker.io/icpdashdb/*"
@@ -275,6 +274,7 @@ image-security-enforcement:
     - name: "quay.io/k8scsi/nfsplugin:*"
     - name: "quay.io/external_storage/efs-provisioner:*"
     - name: "k8s.gcr.io/hyperkube:*"
+    - name: "registry.bluemix.net/ibm/*"
     - name: "registry.bluemix.net/armada-master/ibm-worker-recovery:*"
       
 ## Docker configuration option, more options see

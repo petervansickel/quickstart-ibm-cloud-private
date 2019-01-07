@@ -89,7 +89,7 @@ Resources:
     Properties:
       AllocationId: !GetAtt NATOneEIP.AllocationId
       SubnetId: !Select [0, !Ref PublicSubnetIds]
-      # TBD: Do NatGateway resources need a Kube tag?
+      # TBD: Do NatGateway resources need the Kube tag?
       Tags:
         - Key: !Sub kubernetes.io/cluster/${RootStackName}
           Value: ${RootStackName}
@@ -151,7 +151,7 @@ Resources:
     Properties:
       AllocationId: !GetAtt NATTwoEIP.AllocationId
       SubnetId: !Select [1, !Ref PublicSubnetIds]
-      # TBD: Do NatGateway resources need to Kube tag?
+      # TBD: Do NatGateway resources need the Kube tag?
       Tags:
         - Key: Name
           Value: PrivateSubnetTwo
@@ -219,7 +219,7 @@ Resources:
     Properties:
       AllocationId: !GetAtt NATThreeEIP.AllocationId
       SubnetId: !Select [2, !Ref PublicSubnetIds]
-      # TBD: Do NatGateway resources need to Kube tag?
+      # TBD: Do NatGateway resources need the Kube tag?
       Tags:
         - Key: Name
           Value: PrivateSubnetThree
@@ -241,9 +241,18 @@ Resources:
 
 Outputs:
   # Passed back explicitly because !Select cannot handle getting PrivateSubnetIds list
-  PrivateSubnetOneId:
-    Description: The primary private subnet resource ID. Used to get master and proxy VIPs.
-    Value: !Ref PrivateSubnetOne
+  # TBD: Commenting this out because I'm pretty sure it isn't needed.
+#  PrivateSubnetOneId:
+#    Description: The primary private subnet resource ID. Used to get master and proxy VIPs.
+#    Value: !Ref PrivateSubnetOne
+
+  NATGatewayPublicIPs:
+    Description: >-
+      Comma separated list of public IPs associated with the NAT gateways. The NAT gateway IPs are added to the MasterICPSecurityGroup ingress rules for the various ports. Particularly for an HA deployment, the NAT gateway IPs must be permitted to access the master nodes via the Master node ElasticLoadBalancers.  The cluster nodes on the private subnets access Master node services via the Master node ELBs.
+    Value: !If
+      - 3AZCondition
+      - !Join [',', [!Ref NATOneEIP, !Ref NATTwoEIP, !Ref NATThreeEIP]]
+      - !Ref NATOneEIP
 
   PrivateSubnetIds:
     Description: Comma separated list of private subnet resource IDs

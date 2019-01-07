@@ -84,11 +84,6 @@ Parameters:
       The number of Availability Zones.
     Type: Number
 
-  AvailabilityZones:
-    Description: >-
-      List of Availability Zones to use for the proxy node auto-scaling group.
-    Type: String
-
   ApplicationSecurityGroup:
     Description: >-
       ApplicationSecurityGroup resource ID from the parent stack
@@ -203,6 +198,7 @@ Mappings:
   # See https://cloud-images.ubuntu.com/locator/ec2/
   # Builds needed that support HVM, Elastic Network Adapter (ENA)
   # in order to use the MD5 instance types.
+  # Use EBS backed storage as opposed "instance-store", e.g., hvm:ebs-ssd
   # TODO - Update EU an AP
   AWSRegionAMIEC2:
     us-east-1:
@@ -218,7 +214,9 @@ Mappings:
     eu-central-1:
       Ubuntu16: ami-a9a557c6
     ap-northeast-1:
-      Ubuntu16: ami-d82efcb9
+      Ubuntu16: ami-032f516e93380b8e6
+    ap-northeast-2:
+      Ubuntu16: ami-0eee4dcc71fced4cf
     ap-southeast-1:
       Ubuntu16: ami-d554f1b6
     ap-southeast-2:
@@ -330,17 +328,36 @@ Resources:
                 region=${AWS::Region}
 
     Properties:
-      InstanceType: !Ref ProxyNodeInstanceType
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 300
+            Iops: 8000
+
       IamInstanceProfile: !Ref ICPNodeProfile
-      KeyName: !Ref KeyName
+      InstanceType: !Ref ProxyNodeInstanceType
       ImageId: !FindInMap
           - AWSRegionAMIEC2
           - !Ref AWS::Region
           - Ubuntu16
+      KeyName: !Ref KeyName
 
       # This is only needed when debugging nodeinit.py and the
       # auto-scaling group is assigned to the public subnet
       #AssociatePublicIpAddress: true
+
+      SecurityGroups:
+        # All security groups reference the VPC (using the VpcId attribute)
+        # External access to the proxy public ports
+        - !Ref ApplicationSecurityGroup
+        # ICP traffic among cluster nodes
+        - !Ref InternalICPSecurityGroup
+        # SSH from boot node to cluster nodes
+        - !Ref InternalSSHSecurityGroup
+        # For debugging purposes only, we let in the ExternalSSHSecurity group
+        #- !Ref ExternalSSHSecurityGroup
 
       UserData:
         Fn::Base64:
@@ -360,30 +377,11 @@ Resources:
             cd /root
             /root/nodeinit.sh --os ubuntu
 
-      SecurityGroups:
-        # All security groups reference the VPC (using the VpcId attribute)
-        # External access to the proxy public ports
-        - !Ref ApplicationSecurityGroup
-        # ICP traffic among cluster nodes
-        - !Ref InternalICPSecurityGroup
-        # SSH from boot node to cluster nodes
-        - !Ref InternalSSHSecurityGroup
-        # For debugging purposes only, we let in the ExternalSSHSecurity group
-        #- !Ref ExternalSSHSecurityGroup
-
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeType: io1
-            DeleteOnTermination: true
-            VolumeSize: 300
-            Iops: 8000
 
   ProxyNodeAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       LaunchConfigurationName: !Ref ProxyNodeLaunchConfiguration
-      AvailabilityZones: !Split [',', !Ref AvailabilityZones]
       VPCZoneIdentifier: !Split [',', !Ref PrivateSubnetIds]
       # When we need to debug nodeinit.py, we put proxies on the public subnet
       #VPCZoneIdentifier: !Split [',', !Ref PublicSubnetIds]

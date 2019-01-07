@@ -28,6 +28,38 @@ The `UserData` content is kept to a minimum to keep the amount of script editing
 
 The primary role of the `UserData` script is to install software and kickoff the main scripting that runs on each virtual machine.
 
+### Copying templates to the S3 script package buckets
+
+Each AWS region has a script package bucket where the templates get copied and are then available for running a deployment.
+
+The `ant` script `ExportTemplatesToS3.xml` is used to copy all the templates for the given `version` to all the regions in the given `AWSRegions`.  The ant script has a default value for the `version` and `AWSRegions` properties.  The `-D` option can be used on the command line to override the defaults.  (You may want to limit the region to which the templates are copied, for example.)
+
+- Run the `ExportTemplatesToS3.xml` script to copy the desired templates to the desired region.  In the sample here the `0.9.6` templates are copied to `ap-northeast-1` to the `quickstart-ibm-cloud-private/templates` folder. The S3 bucket name is `aws-icp-quickstart-ap-northeast-1`.
+```
+ant -buildfile ~/git/aws-icp-quickstart/cloudformation/ExportTemplatesToS3.xml -Dversion=0.9.6 -DAWSRegions="ap-northeast-1"
+```
+
+If the `AWSRegions` property is not specified on the command line, then all the regions defined for the `AWSRegions` property value in `ExportTemplatesToS3.xml` will get a copy of the templates for the given `version`.
+
+You can use the `KeyPrefix` property to copy the templates to some other folder at the root of the target bucket.  The default value for the `KeyPrefix` property is `quickstart-ibm-cloud-private`.  The default value follows the convention used by the AWS QuickStart.  Outside of the context of a QuickStart deployment, you can follow some other naming convention for the values of `KeyPrefix`.  Within IBM, the `KeyPrefix` gets used to differentiate the version of the templates, script packages and other artifacts to be used for a given automated deployment.
+```
+ant -buildfile ~/git/aws-icp-quickstart/cloudformation/ExportTemplatesToS3.xml -Dversion=0.9.6 -DKeyPrefix=0.9.6 -DAWSRegions="ap-northeast-1"
+```
+
+In the deployment parameters you will want to have a value:
+```
+{
+  "ParameterKey": "KeyPrefix",
+  "ParameterValue": "0.9.6"    
+}
+```
+
+The artifacts for the deployment (templates and scripts) will be picked up from the `KeyPrefix` folder.
+
+When simulating the behavior of `TaskCat` use a `KeyPrefix` value of `quickstart-ibm-cloud-private`.
+
+The steps are get things set up to deploy to a given AWS region are described in [Deploying IBM Cloud Private to a new AWS region](depling-to-new-region.md)
+
 ### CloudFormation parameter files
 
 There are a number of sample parameter files in the `cloudformation/parameters` folder of the development git repository.
@@ -40,7 +72,7 @@ When specifying parameters for a deployment in a specific AWS region, some thing
 - Not all regions have 3 or more Availability Zones.
 - Some Availability Zones within a region do not support the EC2 instance types permitted to be used for the ICP nodes.
 - Some AWS regions may not support the protocol used by `cfn-init` to access the S3 buckets.  (The work-around for this issue is to use the S3 bucket in a neighboring region, e.g., when deploying ICP to `us-east-2` use the script bucket in `us-east-1` because `cfn-init` cannot access a `us-east-2` bucket.)
-- An EC2 key-pair needs to be defined in each region (TBD - Need to confirm) 
+- An EC2 key-pair needs to be defined in each region (TBD - Need to confirm)
 
 ## Python scripts
 
@@ -57,9 +89,9 @@ The Python scripts are divided into 3 projects:
 
 The bootstrap and nodeinit projects each have an Ant script that does a "build" of the bootstrap and nodeinit "script package" artifacts that are ultimately used to "install" the scripts onto their respective nodes.
 
-For the bootstrap project the Ant build script is named: `Build-AWS-ICP-Bootstrap-ZIP.xml`.
+For the bootstrap project the Ant build script is named: `Build-AWS-ICP-Bootstrap.xml`.
 
-For the nodeinit project the Ant build script is named: `Build-AWS-ICP-NodeInit-ZIP.xml`
+For the nodeinit project the Ant build script is named: `Build-AWS-ICP-NodeInit.xml`
 
 One of the properties in each of the build scripts is a `ScriptPackageVersion`. The version is tacked onto the root name of the zip archive. The version is also injected into the main Python module, i.e., `bootstrap.py` or `nodeinit.py`.
 

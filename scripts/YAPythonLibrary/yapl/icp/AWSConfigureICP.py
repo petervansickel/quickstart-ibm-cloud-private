@@ -28,32 +28,34 @@ StackParameterNames = []
 #       deploys the ICP cluster resources.  Not all of the key names are CF parameter
 #       names.
 TemplateKeywordMappings = {
-                           'CalicoTunnelMTU':                 'CALICO_TUNNEL_MTU',
-                           'CloudProvider':                   'CLOUD_PROVIDER',
-                           'ClusterCADomain':                 'CLUSTER_CA_DOMAIN',
-                           'ClusterCIDR':                     'CLUSTER_CIDR',
-                           'ClusterDomain':                   'CLUSTER_DOMAIN',
-                           'ClusterLBAddress':                'CLUSTER_LB_ADDRESS',
-                           'ClusterDNSName':                  'CLUSTER_DNS_NAME',
-                           'ClusterName':                     'CLUSTER_NAME',
-                           'ClusterVIP':                      'CLUSTER_VIP',
-                           'CluserVIPIface':                  'CLUSTER_VIP_IFACE',
-                           'CustomMetricsAdapter':            'CUSTOM_METRICS_ADAPTER',
-                           'ExcludedMgmtServices':            'EXCLUDED_MGMT_SERVICES',
-                           'GlusterFS':                       'GLUSTERFS',
-                           'ImageSecurityEnforcement':        'IMAGE_SECURITY_ENFORCEMENT',
-                           'Istio':                           'ISTIO',
-                           'KubletNodeName':                  'KUBLET_NODENAME',
-                           'Metering':                        'METERING',
-                           'Minio':                           'MINIO',
-                           'Monitoring':                      'MONITORING',
-                           'ProxyLBAddress':                  'PROXY_LB_ADDRESS',
-                           'ProxyVIP':                        'PROXY_VIP',
-                           'ProxyVIPIface':                   'PROXY_VIP_IFACE',
-                           'ServiceCIDR':                     'SERVICE_CIDR',
-                           'ServiceCatalog':                  'SERVICE_CATALOG',
-                           'VulnerabilityAdvisor':            'VULNERABILITY_ADVISOR' 
-                          }
+  'AdminPassword':                   'ADMIN_PASSWORD',
+  'AdminUser':                       'ADMIN_USER',
+  'CalicoTunnelMTU':                 'CALICO_TUNNEL_MTU',
+  'CloudProvider':                   'CLOUD_PROVIDER',
+  'ClusterCADomain':                 'CLUSTER_CA_DOMAIN',
+  'ClusterCIDR':                     'CLUSTER_CIDR',
+  'ClusterDomain':                   'CLUSTER_DOMAIN',
+  'ClusterLBAddress':                'CLUSTER_LB_ADDRESS',
+  'ClusterDNSName':                  'CLUSTER_DNS_NAME',
+  'ClusterName':                     'CLUSTER_NAME',
+  'ClusterVIP':                      'CLUSTER_VIP',
+  'ClusterVIPIface':                  'CLUSTER_VIP_IFACE',
+  'CustomMetricsAdapter':            'CUSTOM_METRICS_ADAPTER',
+  'ExcludedMgmtServices':            'EXCLUDED_MGMT_SERVICES',
+  'GlusterFS':                       'GLUSTERFS',
+  'ImageSecurityEnforcement':        'IMAGE_SECURITY_ENFORCEMENT',
+  'Istio':                           'ISTIO',
+  'KubletNodeName':                  'KUBLET_NODENAME',
+  'Metering':                        'METERING',
+  'Minio':                           'MINIO',
+  'Monitoring':                      'MONITORING',
+  'ProxyLBAddress':                  'PROXY_LB_ADDRESS',
+  'ProxyVIP':                        'PROXY_VIP',
+  'ProxyVIPIface':                   'PROXY_VIP_IFACE',
+  'ServiceCIDR':                     'SERVICE_CIDR',
+  'ServiceCatalog':                  'SERVICE_CATALOG',
+  'VulnerabilityAdvisor':            'VULNERABILITY_ADVISOR' 
+}
 
 ConfigurationParameterNames = TemplateKeywordMappings.keys()
 
@@ -62,22 +64,22 @@ ConfigurationParameterNames = TemplateKeywordMappings.keys()
   TODO: Enhance the script to get the NIC names from the master node and the proxy nodes.
 """
 AWSDefaultParameterValues = {
-                              'CalicoTunnelMTU':          8981,
-                              'CloudProvider':            'aws',
-                              'CluserVIPIface':           'ens5',
-                              'CustomMetricsAdapter':     'disabled',
-                              'ExcludedMgmtServices':     ["istio", "vulnerability-advisor", "custom-metrics-adapter"],
-                              'GlusterFS':                'disabled',
-                              'ImageSecurityEnforcement': 'enabled',
-                              'Istio':                    'disabled',
-                              'KubletNodeName':           'fqdn',
-                              'Metering':                 'enabled',
-                              'Minio':                    'disabled',
-                              'Monitoring':               'enabled',
-                              'ProxyVIPIface':            'ens5',
-                              'ServiceCatalog':           'enabled',
-                              'VulnerabilityAdvisor':     'disabled'
-                            }
+  'CalicoTunnelMTU':          8981,
+  'CloudProvider':            'aws',
+  'CluserVIPIface':           'ens5',
+  'CustomMetricsAdapter':     'disabled',
+  'ExcludedMgmtServices':     ["istio", "vulnerability-advisor", "custom-metrics-adapter"],
+  'GlusterFS':                'disabled',
+  'ImageSecurityEnforcement': 'enabled',
+  'Istio':                    'disabled',
+  'KubletNodeName':           'fqdn',
+  'Metering':                 'enabled',
+  'Minio':                    'disabled',
+  'Monitoring':               'enabled',
+  'ProxyVIPIface':            'ens5',
+  'ServiceCatalog':           'enabled',
+  'VulnerabilityAdvisor':     'disabled'
+}
 
 # ELB names in the AWS stack
 MasterNodeLoadBalancer = 'MasterNodeLoadBalancer'
@@ -100,14 +102,16 @@ OptionalManagementServices = ["custom-metrics-adapter", "image-security-enforcem
   
   NOTE: GlusterFS and Minio are not supported by the deployment automation and are always disabled.
 """
-ServiceNameParameterMap = { "custom-metrics-adapter":     "CustomMetricsAdapter",
-                            "image-security-enforcement": "ImageSecurityEnforcement",
-                            "istio":                      "Istio",
-                            "metering":                   "Metering",
-                            "monitoring":                 "Monitoring",
-                            "service-catalog":            "ServiceCatalog",
-                            "vulnerability-advisor":      "VulnerabilityAdvisor"
-                          }
+ServiceNameParameterMap = { 
+  "custom-metrics-adapter":     "CustomMetricsAdapter",
+  "image-security-enforcement": "ImageSecurityEnforcement",
+  "istio":                      "Istio",
+  "metering":                   "Metering",
+  "monitoring":                 "Monitoring",
+  "service-catalog":            "ServiceCatalog",
+  "vulnerability-advisor":      "VulnerabilityAdvisor"
+}
+
 
 class ConfigureICP(object):
   """

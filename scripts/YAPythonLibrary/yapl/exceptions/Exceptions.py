@@ -5,6 +5,14 @@ Created on Dec 7, 2016
 @author: Peter Van Sickel pvs@us.ibm.com
 """
 
+class AccessDeniedException(Exception):
+  """
+    The AccessDeniedException is intended to be raised when some operation results in a 403 or some other
+    access denied result.
+  """
+#endClass
+
+
 class NotImplementedException(Exception):
   """
     The NotImplementedException is intended for use in code blocks where some function is not implemented.
@@ -85,6 +93,12 @@ class InvalidParameterException(Exception):
   """
 #endClass
 
+class InstallationException(Exception):
+  """
+    InstallationException is raised when something unexpected occurs at some 
+    point in a scripted installation process for a given component.
+  """
+#endClass
 
 class MissingArgumentException(Exception):
   """

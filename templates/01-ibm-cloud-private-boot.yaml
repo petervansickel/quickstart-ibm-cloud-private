@@ -20,11 +20,6 @@ Metadata:
           - KeyName
 
       - Label:
-          default: Deployment Control Parameters
-        Parameters:
-          - InstallICPFixpack
-
-      - Label:
           default: IBM Cloud Private Configuration Parameters
         Parameters:
           - ClusterName
@@ -40,16 +35,6 @@ Metadata:
           - ICPBootNodeScriptPackagePath
           - ICPDeploymentLogsBucketName
           - ICPScriptBucketName
-          - S3ICPFixpackExecutablePath
-          - S3ICPInceptionFixpackPath
-
-      - Label:
-          default: Installation Parameters
-        Parameters:
-          - InceptionImageName
-          - FixpackInceptionImageName
-          - FixpackInstallCommandString
-          - FixpackFileName
 
       - Label:
           default: EC2 Instance Parameters
@@ -62,7 +47,7 @@ Metadata:
           - ExternalSSHLocation
 
     ParameterLabels:
-      # Some attempt has been made to keep this list in aphabetical order
+      # The parameter labels list is in aphabetical order
       BootNodeInstanceType:
         default: Boot Node EC2 Instance Type
       ClusterCADomain:
@@ -77,14 +62,8 @@ Metadata:
         default: Custom Script Package Path
       ExternalSSHLocation:
         default: External SSH Location
-      FixpackIntallCommandString:
-        default: Fixpack Install Command String
-      FixpackFileName:
-        default: Fixpack File Name
       ICPDeploymentLogsBucketName:
         default: ICP Deployment Logs Bucket Name
-      InstallICPFixpack:
-        default: Install ICP Fixpack
       ICPScriptBucketName:
         default: ICP Script Bucket Name
       ICPBootNodeScriptPackagePath:
@@ -97,15 +76,21 @@ Metadata:
         default: Resource Owner
       RootStackName:
         default: Root Stack Name
-      S3ICPFixpackExecutablePath:
-        default: ICP Fixpack Executable Path
-      S3ICPInceptionFixpackPath:
-        default: ICP Inception Fixpack Path
       ServiceCIDR:
         default: ICP Service Network CIDR
 
 Parameters:
   # Variables are declared in alphabetical order.
+  AdminPassword:
+    Description: >-
+      IBM Cloud Private administrator (super user) password.
+    Type: String
+
+  AdminUser:
+    Description: >-
+      IBM Cloud Private administrator (super user) name.
+    Type: String
+
   ApplicationDomains:
     Description: >-
       A list of fully qualified domain names used for applications.  Each name gets an alias record in the Route53 DNS to the Proxy node Elastic Load Balancer public DNS name. The ApplicationDomains must be consistent with the VPCDomain.
@@ -114,14 +99,6 @@ Parameters:
   ApplicationStorageMountPoint:
     Description: >-
       Mount point for the EFS volume to be used for application shared storage.  The Kubernetes EFS provisioner uses this mount point. Used by the bootstrap script.
-    Type: String
-
-  # AvailabilityZones is declared to be of type String in order to be passed as
-  # an argument to the Split intrinsic function.  Split will not accept types
-  # other than String as its second argument.
-  AvailabilityZones:
-    Description: >-
-      List of Availability Zones to use for the subnets in the VPC. The list is in the form of a comma delimited list.
     Type: String
 
   BootNodeInstanceType:
@@ -162,12 +139,7 @@ Parameters:
 
   ClusterDomain:
     Description: >-
-      The network domain of the cluster.
-    Type: String
-
-  ClusterHostedZoneId:
-    Description: >-
-      The HostedZone resource ID for the ICP cluster.  The ClusterHostedZoneID is used by the bootstrap script to create alias record entries for the Proxy ELB DNS name.
+      The network domain of the ICP cluster overlay network.
     Type: String
 
   ClusterName:
@@ -210,6 +182,11 @@ Parameters:
       The ExternalSSHSecurityGroup resource ID from the parent template.
     Type: String
 
+  IBMCloudPrivateVPC:
+    Description: >-
+      The VPC resource ID for the IBMCloudPrivateVPC deployed by the root template. Used in the bootstrap script.
+    Type: String
+
   ICPBootNodeScriptPackagePath:
     Description: >-
       The path in the ICP bootstrap S3 bucket to the ICP Boot node script package (zip) file.
@@ -245,12 +222,6 @@ Parameters:
       The pre-assigned URL to use for signalling the ICPInstallationCompleted wait condition in the parent stack.  The UserData code sends a success/failure signal to the wait condition when the inception install and all the other configuration of ICP has completed.
     Type: String
 
-  # TODO - I don't think this is needed in this template.  Need to test.
-  InternalSSHSecurityGroup:
-    Description: >-
-      The InternalSSHSecurityGroup resource ID from the parent template.
-    Type: String
-
   KeyFilePath:
     Description: >-
       Path to a file in the ICP script bucket (ICPScriptBuckeName) with public keys for administrators who need SSH access to the boot node.
@@ -264,34 +235,26 @@ Parameters:
 
   MasterNodeCount:
     Description: >-
-      Number of master nodes to be deployed in the ICP cluster. Must be an odd number. For a development deployment 1 is sufficient; for production deployments, 3.
+      Number of master nodes to be deployed in the ICP cluster. Must be an odd number. For a development deployment 1 is sufficient; for production deployments, 3. The MasterNodeCount is referenced in the bootstrap script.
     Type: Number
     AllowedValues:
       - 1
       - 3
 
+  NATGatewayPublicIPs:
+    Description: >-
+      Comma separated list of public IPs associated with the NAT gateways defined for the private subnets. The NAT gateway IPs are added to the MasterICPSecurityGroup ingress rules for the various ports. Particularly for an HA deployment, the NAT gateway IPs must be permitted to access the master nodes via the Master node ElasticLoadBalancers.  The cluster nodes on the private subnets access Master node services via the Master node ELBs. That cluster node network traffic takes on the public IP address of the NAT gateways in order to flow to the master node ELBs.
+    Type: CommaDelimitedList
+
+  ProxyDNSName:
+    Description: >-
+      The ProxyDNSName is the primary name (i.e., the first in the list) of the names in the ApplicationDomains.  It is an alias for the Proxy ELB public DNS name.  ProxyDNSName is an intrinsic variable of the ICP cluster.
+    Type: String
+
   ProxyELBHostedZoneID:
     Description: >-
       The Proxy ELB HostedZone resource ID is used by the bootstrap script to create alias record entries for the Proxy ELB DNS name.
     Type: String
-
-  WhichClusterLBAddress:
-    Description: >-
-      The value to use for the cluster load balancer address.  This value is used to drive the logic in the bootstrap script.
-    Type: String
-    AllowedValues:
-      - UseMasterELBAddress
-      - UseMasterELBName
-      - UseClusterName
-
-  WhichProxyLBAddress:
-    Description: >-
-      The value to use for the proxy load balancer address.  This value is used to drive the logic in the bootstrap script.
-    Type: String
-    AllowedValues:
-      - UseProxyELBAddress
-      - UseProxyELBName
-      - UsePrimaryAppDomain
 
   ProxyNodeLoadBalancerName:
     Description: >-
@@ -311,6 +274,11 @@ Parameters:
   RootStackName:
     Description: >-
       The name of the root stack.
+    Type: String
+
+  SecurityStackId:
+    Description: >-
+      The stack ID of the "security" stack where the security resources are defined.  The bootstrap script modifies security groups once the IP addresses are known for the boot node in order to ensure only limited access to the IBM Cloud Private cluster nodes.
     Type: String
 
   ServiceCIDR:
@@ -333,11 +301,30 @@ Parameters:
       The network domain of the VPC.  The VPCDomain is used when defining the hosted zone.
     Type: String
 
+  WhichClusterLBAddress:
+    Description: >-
+      The value to use for the cluster load balancer address.  This value is used to drive the logic in the bootstrap script.
+    Type: String
+    AllowedValues:
+      - UseMasterELBAddress
+      - UseMasterELBName
+      - UseClusterName
+
+  WhichProxyLBAddress:
+    Description: >-
+      The value to use for the proxy load balancer address.  This value is used to drive the logic in the bootstrap script.
+    Type: String
+    AllowedValues:
+      - UseProxyELBAddress
+      - UseProxyELBName
+      - UsePrimaryAppDomain
+
 
 Mappings:
   # See https://cloud-images.ubuntu.com/locator/ec2/
   # Builds needed that support HVM, Elastic Network Adapter (ENA)
   # in order to use the MD5 instance types.
+  # Use EBS backed storage as opposed "instance-store", e.g., hvm:ebs-ssd
   # TODO - Update EU an AP
   AWSRegionAMIEC2:
     us-east-1:
@@ -353,7 +340,9 @@ Mappings:
     eu-central-1:
       Ubuntu16: ami-a9a557c6
     ap-northeast-1:
-      Ubuntu16: ami-d82efcb9
+      Ubuntu16: ami-032f516e93380b8e6
+    ap-northeast-2:
+      Ubuntu16: ami-0eee4dcc71fced4cf
     ap-southeast-1:
       Ubuntu16: ami-d554f1b6
     ap-southeast-2:
@@ -400,6 +389,7 @@ Resources:
               pycryptodome: []
               boto3: []
               requests: []
+              ipaddr: []
 
         ICPBootstrapScripts:
           sources:
@@ -442,15 +432,26 @@ Resources:
                 region=${AWS::Region}
 
     Properties:
-      AvailabilityZone: !Select [0, !Split [',', !Ref AvailabilityZones]]
-      InstanceType: !Ref BootNodeInstanceType
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 300
+            Iops: 8000
+
       IamInstanceProfile: !Ref BootNodeProfile
-      KeyName: !Ref KeyName
+      InstanceType: !Ref BootNodeInstanceType
       ImageId: !FindInMap
           - AWSRegionAMIEC2
           - !Ref AWS::Region
           - Ubuntu16
+      KeyName: !Ref KeyName
 
+      # Need to use a NetworInterfaces property in order to indicate
+      # that the network interface should be associated with the public
+      # IP address.  As far as I can tell the only way to do that is
+      # with the NetworkInterfaces property.
       NetworkInterfaces:
         - Description: Primary boot node network interface
           GroupSet:
@@ -460,13 +461,15 @@ Resources:
           DeleteOnTermination: true
           SubnetId: !Select [0, !Split [',', !Ref PublicSubnetIds]]
 
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeType: io1
-            DeleteOnTermination: true
-            VolumeSize: 300
-            Iops: 8000
+      Tags:
+        - Key: Name
+          Value: ICPBootNode
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: ICPRole
+          Value: Boot
+        - Key: !Sub kubernetes.io/cluster/${RootStackName}
+          Value: ${RootStackName}
 
       UserData:
         Fn::Base64:
@@ -478,7 +481,7 @@ Resources:
             apt-add-repository -y ppa:ansible/ansible
             apt update -y
             apt install -y ansible
-            # Intall pip, then use pip to install the aws cfn helpers
+            # Install pip, then use pip to install the aws cfn helpers
             apt install -y python-pip
             # Upgrading pip leads to an error. Don't do, pip install --upgrade pip
             pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
@@ -502,16 +505,15 @@ Resources:
             chmod +x /root/*.py
             cd /root
             /root/bootstrap.sh --os ubuntu
-            rc=$?
-            # signal rc code to root stack wait condition
-            /usr/local/bin/cfn-signal -e $rc --id ${AWS::StackId} --reason "ICP Installation Status" "${InstallationCompletedURL}"
 
-      Tags:
-        - Key: Name
-          Value: ICPBootNode
-        - Key: Owner
-          Value: !Ref ResourceOwner
-        - Key: ICPRole
-          Value: Boot
-        - Key: !Sub kubernetes.io/cluster/${RootStackName}
-          Value: ${RootStackName}
+
+Outputs:
+  PrivateIPv4Address:
+    Description: >-
+      The private IPv4 address of the boot node.
+    Value: !GetAtt ICPBootNode.PrivateIp
+
+  PublicIPv4Address:
+    Description: >-
+      The private IPv4 address of the boot node.
+    Value: !GetAtt ICPBootNode.PublicIp

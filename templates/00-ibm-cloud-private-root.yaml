@@ -8,6 +8,8 @@ Metadata:
       - Label:
           default: General deployment parameters
         Parameters:
+          - AdminUser
+          - AdminPassword
           - KeyFilePath
           - KeyName
           - ResourceOwner
@@ -64,7 +66,7 @@ Metadata:
           - WorkerNodeCount
 
       - Label:
-          default: Network parameters
+          default: VPC network parameters
         Parameters:
           - AvailabilityZoneCount
           - AvailabilityZones
@@ -77,19 +79,27 @@ Metadata:
           - PublicSubnets
           - VPCCIDR
           - VPCDomain
+          - VPCHostedZoneId
+          - VPCSubdomainPrefix
+          - AppSubdomainPrefix
 
       - Label:
           default: Application workload configuration
         Parameters:
-          - ApplicationDomains
           - ApplicationStorageMountPoint
 
     ParameterLabels:
-      # Some attempt has been made to keep this list in aphabetical order
+      # Parameter labels in aphabetical order
+      AdminPassword:
+        default: ICP super user password
+      AdminUser:
+        default: ICP super user name
       ApplicationDomains:
         default: Application domains
       ApplicationStorageMountPoint:
         default: Application storage mount point
+      AppSubdomainPrefix:
+        default: Application subdomain prefix
       AvailabilityZoneCount:
         default: Availability zone count
       AvailabilityZones:
@@ -158,8 +168,14 @@ Metadata:
         default: Resource owner
       ServiceCIDR:
         default: ICP service network CIDR
+      VPCDomain:
+        default: Virtual private cloud network domain
+      VPCHostedZoneId:
+        default: Virtual private cloud hosted zone identifier
       VPCName:
         default: Virtual private cloud name
+      VPCSubdomainPrefix:
+        default: Virtual private cloud network sub-domain prefix
       VulnerabilityAdvisorNodeInstanceType:
         default: Vulnerability Advisor node EC2 instance type
       VulnerabilityAdvisorNodeCount:
@@ -168,17 +184,27 @@ Metadata:
         default: Which cluster load balancer address
       WhichProxyLBAddress:
         default: Which proxy load balancer address
-      WorkerNodeInstanceType:
-        default: Worker node EC2 instance type
       WorkerNodeCount:
         default: Worker node count
+      WorkerNodeInstanceType:
+        default: Worker node EC2 instance type
 
 Parameters:
   # Variables are declared in alphabetical order.
   #
+  AdminPassword:
+    Description: >-
+      IBM Cloud Private administrator (super user) password.
+    Type: String
+
+  AdminUser:
+    Description: >-
+      IBM Cloud Private administrator (super user) name.
+    Type: String
+
   ApplicationDomains:
     Description: >-
-      A list of fully qualified domain names used for applications.  Each name gets an alias record in the Route53 DNS to the Proxy node Elastic Load Balancer public DNS name. The ApplicationDomains must be consistent with the VPCDomain. The type is String to allow passing to BootNodeStack. The string is a comma delimited list.
+      A list of fully qualified domain names used for applications.  Each name gets an alias record in the Route53 DNS to the Proxy node Elastic Load Balancer public DNS name. The ApplicationDomains must be consistent with the VPCDomain. The type is String to allow passing to BootNodeStack. The string is a comma delimited list.  The list may be a single element.
     Type: String
     Default: myapps.example.com
 
@@ -187,6 +213,12 @@ Parameters:
       Mount point for the EFS volume to be used for application shared storage. The Kubernetes EFS provisioner uses this mount point.
     Type: String
     Default: /mnt/storage
+
+  AppSubdomainPrefix:
+    Description: >-
+      The subdomain for applications DNS names.  A wildcard entry is put in Route53 that is of the form: *.AppSubdomainPrefix.VPCSubdomainPrefix.VPCDomain.
+    Type: String
+    Default: apps
 
   AvailabilityZoneCount:
     Description: >-
@@ -199,11 +231,13 @@ Parameters:
       - 3
 
   # NOTE: Type needs to be String or CommaDelimtedList to pass it into template stacks.
-  # CommaDelimitedList leads to issues, need to revisit.
   # List<AWS::EC2::AvailabilityZone::Name> breaks stack parameters :(
+  # CommaDelimitedList also breaks stack parameters. :O
   AvailabilityZones:
     Description: >-
       List of Availability Zones to use for the subnets in the VPC. Be careful to provide zones that support the instance types of the ICP cluster members. To get the names of Availability Zones available to you using the AWS CLI: aws ec2 describe-availability-zones
+    #Type: CommaDelimitedList
+    #Type: List<AWS::EC2::AvailabilityZone::Name>
     Type: String
 
   BootNodeInstanceType:
@@ -284,11 +318,11 @@ Parameters:
     Type: String
     MinLength: 9
     MaxLength: 18
-    Default: 0.0.0.0/0
     AllowedPattern: >-
       ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
     ConstraintDescription: >-
       Must be a valid IP CIDR range of the form x.x.x.x/x.
+    Default: 0.0.0.0/0
 
   ExternalICPAdminLocation:
     Description: >-
@@ -296,11 +330,11 @@ Parameters:
     Type: String
     MinLength: 9
     MaxLength: 18
-    Default: 0.0.0.0/0
     AllowedPattern: >-
       ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
     ConstraintDescription: >-
       Must be a valid IP CIDR range of the form x.x.x.x/x.
+    Default: 0.0.0.0/0
 
   ExternalSSHLocation:
     Description: >-
@@ -345,8 +379,10 @@ Parameters:
     Type: Number
     Default: 7200
 
-  # NOTE The version number is used to determine which insallation image tar ball to use, which Docker install binary to use, etc.
-  # The version number also is used to pick up the config.yaml template to use.
+  # NOTE - It is best to pass the ICP version explicitly.
+  # The naming of the ICP image does not follow a consistent convention
+  # for version number.
+  # The version number is used to pick up the config.yaml template to use.
   ICPVersion:
     Description: >-
       The version of ICP to be deployed.  The full version must be provided, e.g., 3.1.0.
@@ -493,23 +529,35 @@ Parameters:
 
   VPCDomain:
     Description: >-
-      The network domain of the VPC.  The VPCDomain is used when defining the hosted zone. The ClusterName and the VPCDomain are combined to form the ClusterDNSName which is used in the ICP configuration for the cluster_CA_domain parameter in the config.yaml file.  (If PKI certificates are provided for the deployment the CN used for creating the certificates must match the match the value of ClusterName concatenated with a dot and the value of the VPCDomain.)
+      The network domain of the VPC.  The VPCDomain is used when defining the hosted zone. If an existing hosted zone is to be used then provide the hosted zone ID in the VPCHostedZoneId parameter, otherwise a hosted zone will be created.  If a subdomain is to be created, then provide a VPCSubdomainPrefix.  When a VPCSubdomainPrefix is provided it is combined with the VPCDomain to form the full network domain name. The ClusterName is combined with the domain name to form the ClusterDNSName which is used in the ICP configuration for the cluster_CA_domain parameter in the config.yaml file.  (If PKI certificates are provided for the deployment the CN used for creating the certificates must match the match the value of ClusterName concatenated with a dot, concatenated with the VPCSubdomainPrefix (if provided), concatenated with the VPCDomain.)
     Type: String
-    Default: example.com
+
+  VPCHostedZoneId:
+    Description: >-
+      If an existing hosted zone is to be used, then the hosted zone ID needs to be specified with this parameter.  Leave it empty if a hosted zone is to be created as part of the deployment.
+    Type: String
+    Default: ''
 
   VPCName:
     Description: The name of the deployed Virtual Private Cloud
     Type: String
     Default: IBMCloudPrivateVPC
 
+  VPCSubdomainPrefix:
+    Description: >-
+      If a subdomain is to be created as part of the deployment, then provide the sub-domain prefix with this parameter.  Otherwise the full domain is assumed to be provided as the value of the VPCDomain parameter. If a non-empty value is provided in the the VPCSubdomainPrefix a sub-domain is created and the full domain used for the deployment is the VPCSubdomainPrefix combined with the VPCDomain.
+    Type: String
+    Default: ''
+
   VulnerabilityAdvisorNodeCount:
     Description: >-
-      Number of Vulnerability Advisor nodes to be deployed in the ICP cluster. Not typically deployed for a development environment. For production deployments, typically 3 are deployed. VA uses zookeeper which requires an odd number of instances for consistency voting purposes. The VA nodes run the resource image and container security scanning components. (NOTE: Not currently supported.)
+      Number of Vulnerability Advisor nodes to be deployed in the ICP cluster. Not typically deployed for a development environment. For production deployments, typically 3 are deployed. VA uses zookeeper which requires an odd number of instances for consistency voting purposes. The VA nodes run the resource image and container security scanning components.
     Type: Number
     AllowedValues:
+      - 0
       - 1
       - 3
-    Default: 1
+    Default: 0
 
   VulnerabilityAdvisorNodeInstanceType:
     Description: ICP vulnerability advisor node AWS EC2 instance type
@@ -540,7 +588,7 @@ Parameters:
       - UseProxyELBAddress
       - UseProxyELBName
       - UsePrimaryAppDomain
-    Default: 'UsePrimaryAppDomain'
+    Default: UseProxyELBName
 
   WorkerNodeCount:
     Description: >-
@@ -564,6 +612,17 @@ Parameters:
     ConstraintDescription: Must be a valid EC2 instance type.
 
 
+Conditions:
+  EmptyHostedZoneId: !Equals [!Ref VPCHostedZoneId, '']
+
+  SetupSubDomain: !And
+    - !Not [!Equals [!Ref VPCSubdomainPrefix, '']]
+    - !Not [!Equals [!Ref VPCHostedZoneId, '']]
+
+  DeployVulnerabilityAdvisor: !Not [!Equals [!Ref VulnerabilityAdvisorNodeCount, 0]]
+
+  EmptySubdomainPrefix: !Equals [!Ref VPCSubdomainPrefix, '']
+
 Resources:
 
   IBMCloudPrivateVPC:
@@ -573,7 +632,6 @@ Resources:
       InstanceTenancy: default
       # Enabling DNS is required to resolve host names.
       # The VPC DNS will include all hosts in its CidrBlock
-      # The VPC DNS is not to be confused with the Route53 DNS service.
       EnableDnsSupport: true
       EnableDnsHostnames: true
       Tags:
@@ -601,13 +659,19 @@ Resources:
       VpcId: !Ref IBMCloudPrivateVPC
       InternetGatewayId: !Ref InternetGateway
 
-  ClusterHostedZone:
+  # When the VPCs attribute has a value, the HostedZone is private.
+  # This resource does not get created if a VPCHostedZoneId is provided at launch.
+  VPCHostedZone:
+    Condition: EmptyHostedZoneId
     Type: AWS::Route53::HostedZone
     Properties:
       HostedZoneConfig:
         Comment: >-
           Private hosted zone for use by the deployed IBM Cloud Private cluster.
-      Name: !Ref VPCDomain
+      Name: !If
+        - EmptySubdomainPrefix
+        - !Ref VPCDomain
+        - !Sub ${VPCSubdomainPrefix}.${VPCDomain}
       VPCs:
         - VPCId: !Ref IBMCloudPrivateVPC
           VPCRegion: !Ref AWS::Region
@@ -615,17 +679,44 @@ Resources:
         - Key: Owner
           Value: !Ref ResourceOwner
 
+  VPCSubDomainZone:
+    Condition: SetupSubDomain
+    Type: AWS::Route53::HostedZone
+    Properties:
+      HostedZoneConfig:
+        Comment: >-
+          Sub-domain hosted zone for use by the deployed IBM Cloud Private cluster.
+      Name: !Sub ${VPCSubdomainPrefix}.${VPCDomain}
+
+  VPCSubDomainNS:
+    Condition: SetupSubDomain
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneId: !Ref VPCHostedZoneId
+      Name: !Sub ${VPCSubdomainPrefix}.${VPCDomain}
+      ResourceRecords: !GetAtt VPCSubDomainZone.NameServers
+      Type: NS
+      # TTL is of type String.  Go figure.
+      TTL: "600"
+
+
   ClusterDNSEntries:
     Type: AWS::Route53::RecordSetGroup
     Properties:
       Comment: DNS entries for the deployed ICP cluster
-      HostedZoneId: !Ref ClusterHostedZone
+      HostedZoneId: !If
+        - EmptyHostedZoneId
+        - !Ref VPCHostedZone
+        - !Ref VPCHostedZoneId
       RecordSets:
         # DNS entry to map clustername.VPCDomain
         # to the master node ELB public DNS name.
         # TODO: This may need to be the value of ClusterCADomain.
         # Need to investigate further.  Talk to Jeff Kwong.
-        - Name: !Join ['.', [!Ref ClusterName, !Ref VPCDomain]]
+        - Name: !If
+          - EmptySubdomainPrefix
+          - !Join ['.', [!Ref ClusterName, !Ref VPCDomain]]
+          - !Join ['.', [!Ref ClusterName, !Ref VPCSubdomainPrefix, !Ref VPCDomain]]
           AliasTarget:
             DNSName: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerDNSName
             HostedZoneId: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerHostedZoneID
@@ -635,7 +726,10 @@ Resources:
         # Only the first domain in the ApplicationDomains list is added here.
         # The remaining names in the ApplicationDomains parameter are added
         # in the bootstrap script.
-        - Name: !Select [0, !Split [',', !Ref ApplicationDomains]]
+        - Name: !If
+          - EmptySubdomainPrefix
+          - !Join ['.', ['*', !Ref AppSubdomainPrefix, !Ref VPCDomain]]
+          - !Join ['.', ['*', !Ref AppSubdomainPrefix, !Ref VPCSubdomainPrefix, !Ref VPCDomain]]
           AliasTarget:
             DNSName: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerDNSName
             HostedZoneId: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerHostedZoneID
@@ -688,6 +782,8 @@ Resources:
         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         ClusterPKIBucketName: !Ref ClusterPKIBucketName
+        ExternalApplicationLocation: !Ref ExternalApplicationLocation
+        ExternalICPAdminLocation: !Ref ExternalICPAdminLocation
         ExternalSSHLocation: !Ref ExternalSSHLocation
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
         ICPArchiveBucketName: !Sub ${ICPArchiveBucketRootName}-${AWS::Region}
@@ -722,17 +818,20 @@ Resources:
         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/01-ibm-cloud-private-boot.yaml
         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
+        AdminPassword: !Ref AdminPassword
+        AdminUser: !Ref AdminUser
         ApplicationDomains: !Ref ApplicationDomains
         ApplicationStorageMountPoint: !Ref ApplicationStorageMountPoint
-        AvailabilityZones: !Ref AvailabilityZones
         BootNodeInstanceType: !Ref BootNodeInstanceType
         BootNodeProfile: !GetAtt IAMResources.Outputs.BootNodeProfile
         BootNodeRole: !GetAtt IAMResources.Outputs.BootNodeRole
         ClusterCADomain: !Ref ClusterCADomain
         ClusterCIDR: !Ref ClusterCIDR
-        ClusterDNSName: !Join ['.', [!Ref ClusterName, !Ref VPCDomain]]
+        ClusterDNSName: !If
+          - EmptySubdomainPrefix
+          - !Join ['.', [!Ref ClusterName, !Ref VPCDomain]]
+          - !Join ['.', [!Ref ClusterName, !Ref VPCSubdomainPrefix, !Ref VPCDomain]]
         ClusterDomain: !Ref ClusterDomain
-        ClusterHostedZoneId: !Ref ClusterHostedZone
         ClusterName: !Ref ClusterName
         ClusterPKIBucketName: !Ref ClusterPKIBucketName
         ClusterPKIRootPath: !Ref ClusterPKIRootPath
@@ -741,6 +840,7 @@ Resources:
         EFSFileSystemId: !GetAtt ClusterSharedStorage.Outputs.EFSFileSystemId
         ExcludedMgmtServices: !Ref ExcludedMgmtServices
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
+        IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
         ICPBootNodeScriptPackagePath: !Ref ICPBootNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPS3KeyPrefix: !Ref QSS3KeyPrefix
@@ -748,10 +848,11 @@ Resources:
         ICPVersion: !Ref ICPVersion
         InceptionTimeout: !Ref InceptionTimeout
         InstallationCompletedURL: !Ref InstallationCompletedHandle
-        InternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.InternalSSHSecurityGroup
         KeyFilePath: !Ref KeyFilePath
         KeyName: !Ref KeyName
         MasterNodeCount: !Ref MasterNodeCount
+        NATGatewayPublicIPs: !GetAtt PrivateSubnetStack.Outputs.NATGatewayPublicIPs
+        ProxyDNSName: !Select [0, !Split [',', !Ref ApplicationDomains]]
         ProxyELBHostedZoneID: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerHostedZoneID
         WhichClusterLBAddress: !Ref WhichClusterLBAddress
         WhichProxyLBAddress: !Ref WhichProxyLBAddress
@@ -759,17 +860,31 @@ Resources:
         PublicSubnetIds: !GetAtt PublicSubnetStack.Outputs.PublicSubnetIds
         ResourceOwner: !Ref ResourceOwner
         RootStackName: !Ref AWS::StackName
+        SecurityStackId: !GetAtt IAMResources.Outputs.StackId
         ServiceCIDR: !Ref ServiceCIDR
         # Bootstrap script expects root stack ID in position 0 of StackIds
-        StackIds: !Join
-          - ','
-          - - !Ref AWS::StackId
-            - !GetAtt IAMResources.Outputs.StackId
-            - !GetAtt MasterNodeStack.Outputs.StackId
-            - !GetAtt ManagementNodeStack.Outputs.StackId
-            - !GetAtt ProxyNodeStack.Outputs.StackId
-            - !GetAtt WorkerNodeStack.Outputs.StackId
+        StackIds: !If
+          - DeployVulnerabilityAdvisor
+          - !Join
+            - ','
+            - - !Ref AWS::StackId
+              - !GetAtt IAMResources.Outputs.StackId
+              - !GetAtt MasterNodeStack.Outputs.StackId
+              - !GetAtt ManagementNodeStack.Outputs.StackId
+              - !GetAtt VulnerabilityAdvisorNodeStack.Outputs.StackId
+              - !GetAtt ProxyNodeStack.Outputs.StackId
+              - !GetAtt WorkerNodeStack.Outputs.StackId
+          - !Join
+            - ','
+            - - !Ref AWS::StackId
+              - !GetAtt IAMResources.Outputs.StackId
+              - !GetAtt MasterNodeStack.Outputs.StackId
+              - !GetAtt ManagementNodeStack.Outputs.StackId
+              - !GetAtt ProxyNodeStack.Outputs.StackId
+              - !GetAtt WorkerNodeStack.Outputs.StackId
+
         VPCDomain: !Ref VPCDomain
+
 
   MasterNodeStack:
     Type: AWS::CloudFormation::Stack
@@ -779,7 +894,6 @@ Resources:
          - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
-        AvailabilityZones: !Ref AvailabilityZones
         EFSDNSName: !GetAtt ClusterSharedStorage.Outputs.EFSDNSName
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
@@ -801,6 +915,7 @@ Resources:
         ResourceOwner: !Ref ResourceOwner
         RootStackName: !Ref AWS::StackName
 
+
   ManagementNodeStack:
     Type: AWS::CloudFormation::Stack
     Properties:
@@ -809,7 +924,6 @@ Resources:
          - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
-        AvailabilityZones: !Ref AvailabilityZones
         ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
@@ -826,6 +940,33 @@ Resources:
         ResourceOwner: !Ref ResourceOwner
         RootStackName: !Ref AWS::StackName
 
+
+  VulnerabilityAdvisorNodeStack:
+    Condition: DeployVulnerabilityAdvisor
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub
+         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/04-ibm-cloud-private-va.yaml
+         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
+      Parameters:
+        AvailabilityZoneCount: !Ref AvailabilityZoneCount
+        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
+        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
+        ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
+        ICPNodeRole: !GetAtt IAMResources.Outputs.ICPNodeRole
+        ICPS3KeyPrefix: !Ref QSS3KeyPrefix
+        ICPScriptBucketName: !Ref QSS3BucketName
+        ICPVersion: !Ref ICPVersion
+        InternalICPSecurityGroup: !GetAtt IAMResources.Outputs.InternalICPSecurityGroup
+        InternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.InternalSSHSecurityGroup
+        KeyName: !Ref KeyName
+        VulnerabilityAdvisorNodeCount: !Ref VulnerabilityAdvisorNodeCount
+        VulnerabilityAdvisorNodeInstanceType: !Ref VulnerabilityAdvisorNodeInstanceType
+        PrivateSubnetIds: !GetAtt PrivateSubnetStack.Outputs.PrivateSubnetIds
+        ResourceOwner: !Ref ResourceOwner
+        RootStackName: !Ref AWS::StackName
+
+
   ProxyNodeStack:
     Type: AWS::CloudFormation::Stack
     Properties:
@@ -835,7 +976,6 @@ Resources:
       Parameters:
         ApplicationSecurityGroup: !GetAtt IAMResources.Outputs.ApplicationSecurityGroup
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
-        AvailabilityZones: !Ref AvailabilityZones
         # ExternalSSHSecurityGroup is used for debugging
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
@@ -865,7 +1005,6 @@ Resources:
          - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
-        AvailabilityZones: !Ref AvailabilityZones
         ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
@@ -888,8 +1027,6 @@ Resources:
 
 
   # The wait starts once the BootNodeStack has been created.
-  # The bootstrap script that runs on the bootnode stack signals
-  # the InstallationCompletedHandle for the wait condition.
   InstallationCompleted:
     Type: AWS::CloudFormation::WaitCondition
     DependsOn: BootNodeStack

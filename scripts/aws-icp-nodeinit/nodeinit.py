@@ -553,7 +553,7 @@ class NodeInit(object):
       raise MissingArgumentException("The AWS region must be provided.")
     #endIf
         
-    installDocPath = os.path.join(self.home,"yaml","icp-install-artifact-map.yaml")
+    installDocPath = os.path.join(self.home,"maps","icp-install-artifact-map.yaml")
     
     with open(installDocPath,'r') as installDocFile:
       installDoc = yaml.load(installDocFile)

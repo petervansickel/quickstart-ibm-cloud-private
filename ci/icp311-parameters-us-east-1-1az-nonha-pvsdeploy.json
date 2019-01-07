@@ -1,5 +1,13 @@
 [
   {
+    "ParameterKey": "AdminPassword",
+    "ParameterValue": "icpadmin"
+  },
+  {
+    "ParameterKey": "AdminUser",
+    "ParameterValue": "icpadmin"
+  },
+  {
     "ParameterKey": "AvailabilityZoneCount",
     "ParameterValue": "1"
   },
@@ -93,7 +101,7 @@
   },
   {
     "ParameterKey": "VPCName",
-    "ParameterValue": "ICP310-VPC"
+    "ParameterValue": "ICP311-VPC"
   },
   {
     "ParameterKey": "WorkerNodeCount",

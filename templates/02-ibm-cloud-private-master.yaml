@@ -80,14 +80,6 @@ Parameters:
       The number of Availability Zones.
     Type: Number
 
-  # In order to process the AvailabilityZones with the Split intrinsic function,
-  # the Type must be String.  It cannot be List<AWS::EC2::AvailabilityZone::Name>
-  # or CommaDelimitedList.
-  AvailabilityZones:
-    Description: >-
-      List of Availability Zones to use for the master node auto-scaling group.  The form of the value is intended to be a comma delimited string of Availability Zones.
-    Type: String
-
   EFSDNSName:
     Description: >-
       The EFS server public DNS name providing shared storage used by the master nodes for the various mount points they need to share, i.e., docker registry, kubernetes audit log, ICP audit log.  Used by the master node initialization script when there is more than 1 master node.
@@ -153,7 +145,6 @@ Parameters:
     Description: >-
       Number of master nodes to be deployed in the ICP cluster. Must be an odd number. For a development deployment 1 is sufficient. For production deployments typically 3 or 5.
     Type: String
-    Default: 1
 
   MasterNodeInstanceType:
     Description: ICP master node AWS EC2 instance type
@@ -205,7 +196,8 @@ Mappings:
   # See https://cloud-images.ubuntu.com/locator/ec2/
   # Builds needed that support HVM, Elastic Network Adapter (ENA)
   # in order to use the MD5 instance types.
-  # TODO - Update EU and AP
+  # Use EBS backed storage as opposed "instance-store", e.g., hvm:ebs-ssd
+  # TODO - Update EU an AP
   AWSRegionAMIEC2:
     us-east-1:
       Ubuntu16: ami-ef151d90
@@ -220,7 +212,9 @@ Mappings:
     eu-central-1:
       Ubuntu16: ami-a9a557c6
     ap-northeast-1:
-      Ubuntu16: ami-d82efcb9
+      Ubuntu16: ami-032f516e93380b8e6
+    ap-northeast-2:
+      Ubuntu16: ami-0eee4dcc71fced4cf
     ap-southeast-1:
       Ubuntu16: ami-d554f1b6
     ap-southeast-2:
@@ -416,14 +410,45 @@ Resources:
                 region=${AWS::Region}
 
     Properties:
-      AvailabilityZone: !Select [0, !Split [',', !Ref AvailabilityZones]]
-      InstanceType: !Ref MasterNodeInstanceType
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 300
+            Iops: 8000
+
       IamInstanceProfile: !Ref MasterNodeProfile
-      KeyName: !Ref KeyName
+      InstanceType: !Ref MasterNodeInstanceType
       ImageId: !FindInMap
           - AWSRegionAMIEC2
           - !Ref AWS::Region
           - Ubuntu16
+      KeyName: !Ref KeyName
+
+      SubnetId: !Select [0, !Split [',', !Ref PrivateSubnetIds]]
+      # Next two lines are to debug nodeint.py issues that may
+      # occur prior to configuring ssh from boot to cluster nodes.
+      #SubnetId: !Select [0, !Split [',', !Ref PublicSubnetIds]]
+      #AssociatePublicIpAddress: true
+
+      SecurityGroupIds:
+        # External access to the master node public ports
+        - !Ref ICPMasterSecurityGroup
+        # Internal ICP network connections
+        - !Ref InternalICPSecurityGroup
+        # Boot node access via SSH
+        - !Ref InternalSSHSecurityGroup
+        # External access via SSH (only needed for debug)
+        #- !Ref ExternalSSHSecurityGroup
+
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: ICPRole
+          Value: Master
+        - Key: !Sub kubernetes.io/cluster/${RootStackName}
+          Value: !Ref RootStackName
 
       UserData:
         Fn::Base64:
@@ -442,41 +467,6 @@ Resources:
             chmod +x /root/*.py
             cd /root
             /root/nodeinit.sh --os ubuntu
-
-      NetworkInterfaces:
-        - Description: Primary master node network interface
-          DeviceIndex: "0"
-          DeleteOnTermination: true
-          SubnetId: !Select [0, !Split [',', !Ref PrivateSubnetIds]]
-          # Next two lines are to debug nodeint.py issues that may
-          # occur prior to configuring ssh from boot to cluster nodes.
-          #SubnetId: !Select [0, !Split [',', !Ref PublicSubnetIds]]
-          #AssociatePublicIpAddress: true
-          GroupSet:
-            # External access to the master node public ports
-            - !Ref ICPMasterSecurityGroup
-            # Internal ICP network connections
-            - !Ref InternalICPSecurityGroup
-            # Boot node access via SSH
-            - !Ref InternalSSHSecurityGroup
-            # External access via SSH (only needed for debug)
-            #- !Ref ExternalSSHSecurityGroup
-
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeType: io1
-            DeleteOnTermination: true
-            VolumeSize: 300
-            Iops: 8000
-
-      Tags:
-        - Key: Owner
-          Value: !Ref ResourceOwner
-        - Key: ICPRole
-          Value: Master
-        - Key: !Sub kubernetes.io/cluster/${RootStackName}
-          Value: !Ref RootStackName
 
 
   MasterNodeTwo:
@@ -532,17 +522,42 @@ Resources:
                 region=${AWS::Region}
 
     Properties:
-      AvailabilityZone: !If
-        - 3AZCondition
-        - !Select [1, !Split [',', !Ref AvailabilityZones]]
-        - !Select [0, !Split [',', !Ref AvailabilityZones]]
-      InstanceType: !Ref MasterNodeInstanceType
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 300
+            Iops: 8000
+
       IamInstanceProfile: !Ref MasterNodeProfile
-      KeyName: !Ref KeyName
+      InstanceType: !Ref MasterNodeInstanceType
       ImageId: !FindInMap
           - AWSRegionAMIEC2
           - !Ref AWS::Region
           - Ubuntu16
+      KeyName: !Ref KeyName
+
+      SecurityGroupIds:
+        # External access to the master node public ports
+        - !Ref ICPMasterSecurityGroup
+        # Internal ICP network connections
+        - !Ref InternalICPSecurityGroup
+        # Boot node access via SSH
+        - !Ref InternalSSHSecurityGroup
+
+      SubnetId: !If
+        - 3AZCondition
+        - !Select [1, !Split [',', !Ref PrivateSubnetIds]]
+        - !Select [0, !Split [',', !Ref PrivateSubnetIds]]
+
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: ICPRole
+          Value: Master
+        - Key: !Sub kubernetes.io/cluster/${RootStackName}
+          Value: !Ref RootStackName
 
       UserData:
         Fn::Base64:
@@ -561,39 +576,6 @@ Resources:
             chmod +x /root/*.py
             cd /root
             /root/nodeinit.sh --os ubuntu
-
-      NetworkInterfaces:
-        - Description: Primary master node network interface
-          DeviceIndex: "0"
-          DeleteOnTermination: true
-          SubnetId: !If
-            - 3AZCondition
-            - !Select [1, !Split [',', !Ref PrivateSubnetIds]]
-            - !Select [0, !Split [',', !Ref PrivateSubnetIds]]
-          GroupSet:
-            # External access to the master node public ports
-            - !Ref ICPMasterSecurityGroup
-            # Internal ICP network connections
-            - !Ref InternalICPSecurityGroup
-            # Boot node access via SSH
-            - !Ref InternalSSHSecurityGroup
-
-
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeType: io1
-            DeleteOnTermination: true
-            VolumeSize: 300
-            Iops: 8000
-
-      Tags:
-        - Key: Owner
-          Value: !Ref ResourceOwner
-        - Key: ICPRole
-          Value: Master
-        - Key: !Sub kubernetes.io/cluster/${RootStackName}
-          Value: !Ref RootStackName
 
 
   MasterNodeThree:
@@ -649,17 +631,42 @@ Resources:
                 region=${AWS::Region}
 
     Properties:
-      AvailabilityZone: !If
-        - 3AZCondition
-        - !Select [2, !Split [',', !Ref AvailabilityZones]]
-        - !Select [0, !Split [',', !Ref AvailabilityZones]]
-      InstanceType: !Ref MasterNodeInstanceType
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 300
+            Iops: 8000
+
       IamInstanceProfile: !Ref MasterNodeProfile
-      KeyName: !Ref KeyName
+      InstanceType: !Ref MasterNodeInstanceType
       ImageId: !FindInMap
           - AWSRegionAMIEC2
           - !Ref AWS::Region
           - Ubuntu16
+      KeyName: !Ref KeyName
+
+      SecurityGroupIds:
+        # External access to the master node public ports
+        - !Ref ICPMasterSecurityGroup
+        # Internal ICP network connections
+        - !Ref InternalICPSecurityGroup
+        # Boot node access via SSH
+        - !Ref InternalSSHSecurityGroup
+
+      SubnetId: !If
+        - 3AZCondition
+        - !Select [2, !Split [',', !Ref PrivateSubnetIds]]
+        - !Select [0, !Split [',', !Ref PrivateSubnetIds]]
+
+      Tags:
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: ICPRole
+          Value: Master
+        - Key: !Sub kubernetes.io/cluster/${RootStackName}
+          Value: !Ref RootStackName
 
       UserData:
         Fn::Base64:
@@ -678,38 +685,6 @@ Resources:
             chmod +x /root/*.py
             cd /root
             /root/nodeinit.sh --os ubuntu
-
-      NetworkInterfaces:
-        - Description: Primary master node network interface
-          DeviceIndex: "0"
-          DeleteOnTermination: true
-          SubnetId: !If
-            - 3AZCondition
-            - !Select [2, !Split [',', !Ref PrivateSubnetIds]]
-            - !Select [0, !Split [',', !Ref PrivateSubnetIds]]
-          GroupSet:
-            # External access to the master node public ports
-            - !Ref ICPMasterSecurityGroup
-            # Internal ICP network connections
-            - !Ref InternalICPSecurityGroup
-            # Boot node access via SSH
-            - !Ref InternalSSHSecurityGroup
-
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeType: io1
-            DeleteOnTermination: true
-            VolumeSize: 300
-            Iops: 8000
-
-      Tags:
-        - Key: Owner
-          Value: !Ref ResourceOwner
-        - Key: ICPRole
-          Value: Master
-        - Key: !Sub kubernetes.io/cluster/${RootStackName}
-          Value: !Ref RootStackName
 
 
 Outputs:

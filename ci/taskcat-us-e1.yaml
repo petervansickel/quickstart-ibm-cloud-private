@@ -8,7 +8,7 @@ global:
   reporting: true
 
 tests:
-  icp-ha:
+  icp-nonha:
     regions:
       - us-east-1
     parameter_input: icp310-parameters-us-east-1-1az-nonha-pvsdeploy.json

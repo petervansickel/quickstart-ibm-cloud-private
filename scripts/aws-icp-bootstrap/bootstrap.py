@@ -75,6 +75,15 @@ History:
   24 NOV 2018 - pvs Added BaseException to make sure any exception is caught.  Trying to correct 
   behavior where under certain conditions it appears that the main() is not exiting "cleanly" and
   the follow-on code in the bootstrap.sh and the UserData of the boot node is not getting executed.
+  
+  07 - 09 DEC 2018 - pvs Factored in the CommandHelper class with method processCommandSets().  
+  Replacement for installables() method.  Keeping old code around until the new code is fully tested.
+  Completed the refactoring work for HelmHelper and KubeHelper (transformed to KubectlHelper).
+  The original HelmHelper was renamed HeavyHelmHelper.  Delete it altogether once we get the
+  refactored code tested and working correctly.
+  
+  25-31 DEC 2018 - pvs Added SecurityHelper to configure certain security groups on the fly.
+  Removed obsolete code having to do with HeavyHelmHelper and installables.
 """
 
 from Crypto.PublicKey import RSA
@@ -104,8 +113,8 @@ from yapl.icp.AWSConfigureEFS import ConfigureEFS
 from yapl.icp.ConfigurePKI import ConfigurePKI
 from yapl.k8s.ConfigureKubectl import ConfigureKubectl
 from yapl.icp.ConfigureHelm import ConfigureHelm
-from yapl.helm.HelmHelper import HelmHelper
-from yapl.k8s.KubeHelper import KubeHelper
+from yapl.icp.CommandHelper import CommandHelper
+from yapl.aws.SecurityHelper import SecurityHelper
 
 ClusterHostSyncSleepTime = 60
 ClusterHostSyncMaxTryCount = 100
@@ -134,6 +143,8 @@ StackParameterNames = []
   the information captured in the intrinsic variable values.
 """
 IntrinsicVariableNames = [
+    "BootNodePrivateIPv4Address",
+    "BootNodePublicIPv4Address",
     "ClusterCertPath",
     "ClusterDNSName",
     "ClusterName",
@@ -143,9 +154,12 @@ IntrinsicVariableNames = [
     "HelmCertPath",
     "HelmKeyPath",
     "HelmCertPath",
+    "IBMCloudPrivateVPC",
     "ICPVersion",
     "KubeCertPath",
-    "KubeKeyPath"
+    "KubeKeyPath",
+    "NATGatewayPublicIPv4Address",
+    "ProxyDNSName"
   ]
 
 IntrinsicVariables = {}
@@ -187,11 +201,12 @@ class Host:
     Helper class to the Bootstrap class.
   """
   
-  def __init__(self, ip4_address, private_dns_name, role, instanceId):
+  def __init__(self, private_ip4_address, private_dns_name, public_ip4_address, role, instanceId):
     """
       Constructor
     """
-    self.ip4_address = ip4_address
+    self.private_ip4_address = private_ip4_address
+    self.public_ip4_address = public_ip4_address
     self.private_dns_name = private_dns_name
     self.role = role
     self.instanceId = instanceId
@@ -202,7 +217,7 @@ class Host:
 
 class Bootstrap(object):
   """
-    Bootstrap class for AWS ICP Quickstart responsible for steps executed on 
+    Bootstrap class for AWS ICP QuickStart responsible for steps executed on 
     the boot node that lead to the installation of IBM Cloud Private on a collection 
     of AMIs deployed in an AWS region.
   """
@@ -446,7 +461,7 @@ class Bootstrap(object):
     except CalledProcessError as e:
       TR.error(methodName,"Exception getting cluster CA cert: %s" % e, e)
       raise e
-    #endIf
+    #endTry
       
   #endDef
   
@@ -474,6 +489,48 @@ class Bootstrap(object):
     #CN = "%s.%s" % (self.ClusterName,self.VPCDomain)
     CN = self.ClusterDNSName
     return CN
+  #endDef
+  
+  
+  def getPrivateIPv4Address(self):
+    """
+      Return the private IPv4 address of the boot node.
+      
+      This method assumes _getHosts() has been executed.  
+      The _getHosts() method fills in the bootHost instance variable.
+    """
+    return self.bootHost.private_ip4_address
+  #endDef
+  
+  
+  def getNATGatewayIPv4Address(self):
+    """
+      Return a list of one or more IPv4 addresses for NAT gateways that may be deployed
+      as part of the Virtual Private Cloud (VPC) for the ICP cluster.  For an HA deployment
+      there will be multiple NAT gateways (3), one for each subnet in each Availability Zone.
+      For a non-HA deployment there will be only one IP address in the returned list.
+      
+      The comma separated NAT gateway IPv4 addresses are held in a stack parameter named
+      NATGatewayPublicIPs.
+      
+      The NAT gateway public IPs need to be added to the MasterICPSecurityGroup ingress rules
+      in order to all network traffic to flow from ICP cluster nodes on one or more private
+      subnets, to the public address of the master node ElasticLoadBalancer(s).
+    """
+    
+    return self.NATGatewayPublicIPs.split(',')
+    
+  #endDef
+  
+  
+  def getPublicIPv4Address(self):
+    """
+      Return the public IPv4 address of the boot node.
+      
+      This method assumes _getHosts() has been executed.  
+      The _getHosts() method fills in the bootHost instance variable.
+    """
+    return self.bootHost.public_ip4_address
   #endDef
   
   
@@ -527,14 +584,20 @@ class Bootstrap(object):
       raise ICPInstallationException("Playbook: %s, does not exist in the bootstrap script package." % (self.etcHostsPlaybookPath))
     #endIf
     
-    # If the bootstrap script package includes an "installables" directory, 
-    # then prepare for installing things defined in that directory, post ICP installation.
-    installablesPath = os.path.join(self.home,"installables")
-    if (not os.path.isdir(installablesPath)):
-      installablesPath = None
+    # If the bootstrap script package includes an "commandsets" directory, 
+    # then set the commandSetsPath for later executing of the command sets.
+    commandSetsPath = os.path.join(self.home,"commandsets")
+    if (not os.path.isdir(commandSetsPath)):
+      commandSetsPath = None
     #endIf
-    self.installablesPath = installablesPath
-    
+    self.commandSetsPath = commandSetsPath
+
+    securityPath = os.path.join(self.home,"config","security")
+    if (not os.path.isdir(securityPath)):
+      securityPath = None
+    #endIf
+    self.securityPath = securityPath
+      
     # The root stack parameter InceptionTimeout is expected to be provided.    
     if (not self.InceptionTimeout):
       if (TR.isLoggable(Level.FINER)):
@@ -561,8 +624,18 @@ class Bootstrap(object):
     self._getHosts(self.stackIds)
 
     self._getSSMParameterKeys(rootStackName)
+
+    # Initialize various IntrinsicVariables
+    IntrinsicVariables['HelmHome'] = os.path.join(self.home,".helm")     
+    # The Kube paths are defined in the ConfigureKubectl class
+    IntrinsicVariables['KubeKeyPath'] = os.path.join(self.home,".kube","kubecfg.key")
+    IntrinsicVariables['KubeCertPath'] = os.path.join(self.home,".kube","kubecfg.crt")
+    IntrinsicVariables['HelmKeyPath'] = os.path.join(self.pkiDirectory,"helm","admin.key")
+    IntrinsicVariables['HelmCertPath'] = os.path.join(self.pkiDirectory,"helm","admin.crt")
     
-            
+    IntrinsicVariables['BootNodePrivateIPv4Address'] = self.getPrivateIPv4Address()
+    IntrinsicVariables['BootNodePublicIPv4Address'] = self.getPublicIPv4Address()
+    IntrinsicVariables['NATGatewayPublicIPv4Address'] = self.getNATGatewayIPv4Address()
   #endDef
   
   
@@ -604,10 +677,10 @@ class Bootstrap(object):
       hostsInRole = self.hosts.get(role)
       hostsInRole.append(host)
       if (TR.isLoggable(Level.FINE)):
-        TR.fine(methodName,"Added host with private DNS name: %s and with IP address: %s to role: %s" % (host.private_dns_name,host.ip4_address,role))
+        TR.fine(methodName,"Added host with private DNS name: %s and with IP address: %s to role: %s" % (host.private_dns_name,host.private_ip4_address,role))
       #endIf
     else:
-      TR.warn(methodName,"Unexpected host role: %s for host: %s.  Valid host roles: %s" % (role,host.ip4_address,ICPClusterRoles))
+      TR.warn(methodName,"Unexpected host role: %s for host: %s.  Valid host roles: %s" % (role,host.private_ip4_address,ICPClusterRoles))
     #endIf
   #endIf
   
@@ -846,13 +919,13 @@ class Bootstrap(object):
         #endIf
       #endFor
       if (not icpRole):
-        TR.warning(methodName,"Each EC2 instance in the cluster is expected to have an ICPRole tag.")
+        TR.warning(methodName,"Ignoring EC2 instance: %s, with no ICPRole tag." % iid)
       elif (icpRole == "boot"):
-        self.bootHost = Host(ec2Instance.private_ip_address,ec2Instance.private_dns_name,icpRole,iid)
+        self.bootHost = Host(ec2Instance.private_ip_address,ec2Instance.private_dns_name,ec2Instance.public_ip_address,icpRole,iid)
       elif (icpRole in ICPClusterRoles):
-        self.addHost(icpRole,Host(ec2Instance.private_ip_address,ec2Instance.private_dns_name,icpRole,iid))
+        self.addHost(icpRole,Host(ec2Instance.private_ip_address,ec2Instance.private_dns_name,ec2Instance.public_ip_address,icpRole,iid))
       else:
-        TR.warning(methodName,"Unexpected role: %s" % icpRole)
+        TR.warning(methodName,"Ignoring EC2 instance: %s, with role tag: %s" % (iid,icpRole))
       #endIf
     #endFor
   #endDef
@@ -873,7 +946,7 @@ class Bootstrap(object):
       Return a list of ip4 addresses for the hosts in role of 'master'
     """
     hosts = self.getMasterHosts()
-    return [host.ip4_address for host in hosts]
+    return [host.private_ip4_address for host in hosts]
   #endDef
 
   
@@ -913,19 +986,19 @@ class Bootstrap(object):
   def createEtcHostsFile(self):
     """
       Add content to the local /etc/hosts file that captures the private IP address
-      and host name of boot node all the members of the cluster.
+      and host name of boot node and all the members of the cluster.
       
       NOTE: This method is not used. The VPC DNS service is enabled and it works
       for all EC2 instances deployed in the VPC.
     """      
     with open("/etc/hosts", "a+") as hosts:
       hosts.write("\n#### BEGIN IBM Cloud Private Cluster Hosts\n\n")
-      hosts.write("%s\t\t%s\n" % (self.bootHost.ip4_address,self.bootHost.private_dns_name))
+      hosts.write("%s\t\t%s\n" % (self.bootHost.private_ip4_address,self.bootHost.private_dns_name))
       for role in ICPClusterRoles:
         hostsInRole = self.hosts.get(role)
         if (hostsInRole):
           for host in hostsInRole:
-            hosts.write("%s\t\t%s\n" % (host.ip4_address,host.private_dns_name))
+            hosts.write("%s\t\t%s\n" % (host.private_ip4_address,host.private_dns_name))
           #endFor
         #endIf
       #endFor
@@ -957,7 +1030,7 @@ class Bootstrap(object):
     if (hosts):
       hostsFile.write("[%s]\n" % group)
       for host in hosts:
-        hostsFile.write("%s\n" % host.ip4_address)
+        hostsFile.write("%s\n" % host.private_ip4_address)
       #endFor
       hostsFile.write("\n")
     #endIf
@@ -1052,12 +1125,12 @@ class Bootstrap(object):
       The ssh-keyscan hosts file is one IP address per line.
     """      
     with open("ssh-keyscan-hosts", "w") as hosts:
-      hosts.write("%s\n" % self.bootHost.ip4_address)
+      hosts.write("%s\n" % self.bootHost.private_ip4_address)
       for role in ICPClusterRoles:
         hostsInRole = self.hosts.get(role)
         if (hostsInRole):
           for host in hostsInRole:
-            hosts.write("%s\n" % host.ip4_address)
+            hosts.write("%s\n" % host.private_ip4_address)
           #endFor
         #endIf
       #endFor
@@ -1148,7 +1221,7 @@ class Bootstrap(object):
     authKeysPath = os.path.join(self.sshHome, 'authorized_keys')
     
     publicKey = self.sshKey.publickey()
-    self.authorizedKeyEntry ="%s root@%s" % (publicKey.exportKey('OpenSSH'),self.bootHost.ip4_address)
+    self.authorizedKeyEntry ="%s root@%s" % (publicKey.exportKey('OpenSSH'),self.bootHost.private_ip4_address)
     with open(authKeysPath, "a+") as authorized_keys:
       authorized_keys.write("%s\n" % self.authorizedKeyEntry)
     #endWith
@@ -1413,7 +1486,7 @@ class Bootstrap(object):
       raise MissingArgumentException("The AWS region must be provided.")
     #endIf
         
-    installDocPath = os.path.join(self.home,"yaml","icp-install-artifact-map.yaml")
+    installDocPath = os.path.join(self.home,"maps","icp-install-artifact-map.yaml")
     
     with open(installDocPath,'r') as installDocFile:
       installDoc = yaml.load(installDocFile)
@@ -2165,10 +2238,47 @@ class Bootstrap(object):
   
   def signalWaitHandle(self, eth, etm, ets):
     """
+      Send a status signal to the "install completed" wait condition via the pre-signed URL
+      provided to the stack.
+      
+      NOTE: This works.  No 403 or other issue.
+      NOTE: We send a --success true regardless of the rc status from the installation process.
+            The actual status is provided in the --reason option of the signal.
+            We always send success so that the deployment does not roll back and the deployer
+            can do a post mortem, if there is a failure.
+    """
+    methodName = 'signalWaitHandle'
+    try:
+      if (self.rc == 0):
+        status = 'SUCCESS'
+      else:
+        status = 'FAILURE'
+      #endIf
+      data = "%s: IBM Cloud Private installation elapsed time: %d:%02d:%02d" % (status,eth,etm,ets)
+      TR.info(methodName,"Signaling: %s with status: %s, data: %s" % (self.InstallationCompletedURL,status,data))
+      # Even when the installation fails, use --success true 
+      # to avoid deleting the stack and allow deployer to do a post mortem
+      check_call(['/usr/local/bin/cfn-signal', 
+                  '--success', 'true', 
+                  '--id', self.bootStackId, 
+                  '--reason', status, 
+                  '--data', data, 
+                  self.InstallationCompletedURL
+                  ])
+    except CalledProcessError as e:
+      TR.error(methodName, "ERROR return code: %s, Exception: %s" % (e.returncode, e), e)
+      raise e      
+    #endTry    
+  #endDef
+  
+
+  def signalWaitHandle_broken(self, eth, etm, ets):
+    """
       Send a status signal to the "install completed" wait condition via the presigned URL
       provided to the boot stack.
       
       NOTE: This code failed to work properly.  Getting 403 status from the requests.put().
+      Need to revisit.  Got sample code to look at that configures the HTTP header properly.
     """
     methodName = 'signalWaitHandle'
     try:
@@ -2196,38 +2306,40 @@ class Bootstrap(object):
       self.rc = 1
     #endTry
   #endDef
-  
-  
-  def installables(self, installablesPath):
-    """
-      Install all of the installables defined in the given installablesPath directory.
-      
-      Each directory in installablesPath holds .yaml files of kind "helm" and "kubectl" 
-      that define the installation of something using a helm chart.  The kubectl that 
-      may be defined creates kubernetes objects that may be needed by the thing that 
-      got installed.
-      
-    """
-    methodName = 'installables'
+    
 
-    installables = os.listdir(installablesPath)
-    for installable in installables:
-      ipath = os.path.join(installablesPath,installable)
-      if (os.path.isdir(ipath)): 
+  def processCommandSets(self, commandSetsPath):
+    """
+      Process all of the collections (sets) of commands defined in the given commandSetsPath.
+      
+      Each directory in commandSetsPath holds .yaml files of kind "variables", "helm" and 
+      "kubectl" or other kinds that are supported by a helper class.
+      
+      If invoking any of the commands results in an exception the bootstap rc code gets set
+      to a non-zero value.  However, processing continues.  Any command sets that fail to 
+      execute can be cleaned up manually.  The ICP deployment is not considered a failure 
+      to the point that it is discarded.
+    """
+    methodName = "processCommandSets"
+    
+    commandSets = [x for x in os.listdir(commandSetsPath) if os.path.isdir(os.path.join(commandSetsPath,x))]
+    if (not commandSets):
+      TR.info(methodName,"No command set directories in: %s" % commandSetsPath)
+    else:
+      if (len(commandSets) > 1): commandSets.sort()
+      for commandSet in commandSets:
+        csPath = os.path.join(commandSetsPath,commandSet)
         try:
-          TR.info(methodName,"Executing kubectl at: %s" % ipath)
-          kubeHelper = KubeHelper(ipath,**IntrinsicVariables)
-          kubeHelper.invokeCommands()
-          TR.info(methodName,"Completed kubectl at: %s" % ipath)
-          TR.info(methodName,"Executing helm at: %s" % ipath)
-          helmHelper = HelmHelper(ipath,**IntrinsicVariables)
-          helmHelper.invokeCommands()
-          TR.info(methodName,"Completed helm at: %s" % ipath)
+          TR.info(methodName,"STARTED executing command set at: %s" % csPath)
+          cmdHelper = CommandHelper(csPath,intrinsicVariables=IntrinsicVariables)
+          cmdHelper.invokeCommands()
+          TR.info(methodName,"COMPLETED executing command set at: %s" % csPath)
         except Exception, e:
+          self.rc = 1
           TR.error(methodName,"ERROR: %s" % e, e)
         #endTry
-      #endIf
-    #endFor
+      #endFor
+    #endIf   
   #endDef
   
   
@@ -2301,11 +2413,21 @@ class Bootstrap(object):
       
       self.createICPHostsFile()
       self.createAnsibleHostsFile()
+
+      if (self.securityPath):
+        securityHelper = SecurityHelper(stackId=self.SecurityStackId, intrinsicVariables=IntrinsicVariables)
+        securityHelper.configureSecurity(configPath=self.securityPath)
+      #endIf
+            
       self.configureSSH()
       self.addBootNodeSSHKeys()
  
       # Turn off source/dest check on all cluster EC2 instances
-      self._disableSourceDestCheck()    
+      # (TBD) - I'm not convinced disabling the source/dest check is necessary
+      # (PVS 31-DEC-2018:
+      # _disabeSourceDestCheck(I) hasn't been used for over a month with many deployments
+      # and no obvious ill-effects.  At this point, pretty sure it is not necessary.
+      #self._disableSourceDestCheck()    
      
       self.installMap = self.loadInstallMap(version=self.ICPVersion, region=self.region)
       self.getInstallImages(self.installMap)
@@ -2366,19 +2488,14 @@ class Bootstrap(object):
       
       clusterCertPath = os.path.join(self.home,"cluster-ca.crt")
       self.getClusterCACert(clusterCertPath,self.ClusterDNSName)
-      IntrinsicVariables['HelmHome'] = os.path.join(self.home,".helm")     
       IntrinsicVariables['ClusterCertPath'] = clusterCertPath
-      # The Kube paths are defined in the ConfigureKubectl class
-      IntrinsicVariables['KubeKeyPath'] = os.path.join(self.home,".kube","kubecfg.key")
-      IntrinsicVariables['KubeCertPath'] = os.path.join(self.home,".kube","kubecfg.crt")
-      IntrinsicVariables['HelmKeyPath'] = os.path.join(self.pkiDirectory,"helm","admin.key")
-      IntrinsicVariables['HelmCertPath'] = os.path.join(self.pkiDirectory,"helm","admin.crt")
+      
       # Install and configure Helm
       self.installHelm()
       
-      # Install anything that is defined in the "installables" directory
-      if (self.installablesPath):
-        self.installables(self.installablesPath)
+      # Run all the commands in the commandsets directory
+      if (self.commandSetsPath):
+        self.processCommandSets(self.commandSetsPath)
       #endIf
     
     except ExitException:
@@ -2410,7 +2527,6 @@ class Bootstrap(object):
       etm, ets = divmod(elapsedTime,60)
       eth, etm = divmod(etm,60) 
 
-   
       if (self.rc == 0):
         TR.info(methodName,"BOOT0103I SUCCESS END Boostrap AWS ICP Quickstart.  Elapsed time (hh:mm:ss): %d:%02d:%02d" % (eth,etm,ets))
       else:
@@ -2425,6 +2541,8 @@ class Bootstrap(object):
         self.rc = 1
       #endTry
       
+      self.signalWaitHandle(eth,etm,ets)
+
     #endTry
 
     # Getting 403 from this.  The signal is in boot node stack UserData

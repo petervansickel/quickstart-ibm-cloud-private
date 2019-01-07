@@ -8,16 +8,20 @@
     "ParameterValue": "us-east-2a"
   },
   {
-    "ParameterKey": "ApplicationDomains",
-    "ParameterValue": "myapps.icp4d-test.com"
+    "ParameterKey": "AppSubdomainPrefix",
+    "ParameterValue": "apps"
   },
   {
     "ParameterKey": "BootNodeInstanceType",
     "ParameterValue": "m5.xlarge"
   },
   {
-    "ParameterKey": "CustomArtifactsPath",
-    "ParameterValue": "custom/aws.zip"
+    "ParameterKey": "ExternalApplicationLocation",
+    "ParameterValue": "108.39.143.97/32"
+  },
+  {
+    "ParameterKey": "ExternalICPAdminLocation",
+    "ParameterValue": "108.39.143.97/32"
   },
   {
     "ParameterKey": "ExternalSSHLocation",
@@ -37,7 +41,7 @@
   },
   {
     "ParameterKey": "KeyFilePath",
-    "ParameterValue": "keys/additional-keys"
+    "ParameterValue": "keys/icp4d-keys"
   },
   {
     "ParameterKey": "KeyName",
@@ -89,7 +93,7 @@
   },
   {
     "ParameterKey": "VPCName",
-    "ParameterValue": "ICP310-VPC"
+    "ParameterValue": "ICP4D-VPC"
   },
   {
     "ParameterKey": "WorkerNodeCount",

@@ -32,31 +32,6 @@ from yapl.exceptions.Exceptions import MissingArgumentException
 
 TR = Trace(__name__)
 
-"""
-Got the cd context manager from:
-https://stackoverflow.com/questions/431684/how-do-i-change-directory-cd-in-python/13197763#13197763
-
-It turns out the context manager is not needed.
-"""
-class cd:
-    """Context manager for changing the current working directory"""
-    def __init__(self, newPath):
-        self.newPath = os.path.expanduser(newPath)
-    #endDef
-
-    def __enter__(self):
-        self.savedPath = os.getcwd()
-        if (TR.isLoggable(Level.FINEST)):
-          TR.finest("cd.__enter__","Current working directory: %s changing to: %s" % (self.savedPath, self.newPath))
-        #endIf
-        os.chdir(self.newPath)
-    #endDef
-
-    def __exit__(self, etype, value, traceback):
-        os.chdir(self.savedPath)
-    #endDef
-#endClass
-
 
 class ConfigureHelm(object):
   """
@@ -195,7 +170,7 @@ class ConfigureHelm(object):
     shutil.copyfile(self.HelmKeyPath,self.UserKeyPath)
     shutil.copyfile(self.HelmCertPath,self.UserCertPath)
     shutil.copyfile(self.ClusterCertPath,self.CACertPath)
-      
+    
     try:
       TR.info(methodName, "Invoking: helm repo add ibm-charts https://raw.githubusercontent.com/IBM/charts/master/repo/stable/")
       output = check_output(["helm", "repo", "add", "ibm-charts", "https://raw.githubusercontent.com/IBM/charts/master/repo/stable/"])
@@ -219,13 +194,20 @@ class ConfigureHelm(object):
       TR.error(methodName,"Exception calling repo add ibmcase-spring: %s" % e, e)
     #endTry
 
+
+    # TBD: Need to pass in the env vars, so the next check_output() has a valid HELM_HOME
+    # Without HELM_HOME and the key, cert, ca .pem files, an X.509 error occurs due to self-signed cert. 
+    # TBD: Further investigation needed.  For unknown reasons the next to add the mgmt-charts requires the 
+    # --ca-file, --key-file and --cert-file arguments on the command line.  It should pick that up from 
+    # the HELM_HOME .pem files.
+    #helmEnv = os.environ.copy()
     
     try:
-#      TR.info(methodName, "Invoking: helm repo add --ca-file {cacert} --cert-file {helmcert} --key-file {helmkey} mgmt-charts https://{cluster}:8443/mgmt-repo/charts".format(cacert=self.ClusterCertPath,helmcert=self.HelmCertPath,helmkey=self.HelmKeyPath,cluster=self.ClusterDNSName))
-#      output = check_output(["helm", "repo", "add", "--ca-file", self.ClusterCertPath, "--cert-file", self.HelmCertPath, "--key-file", self.HelmKeyPath, "mgmt-charts", "https://%s:8443/mgmt-repo/charts" % self.ClusterDNSName])
-      # Use default ca, key, cert 
-      TR.info(methodName, "Invoking: helm repo add mgmt-charts https://{cluster}:8443/mgmt-repo/charts".format(cluster=self.ClusterDNSName))
-      output = check_output(["helm", "repo", "add", "mgmt-charts", "https://%s:8443/mgmt-repo/charts" % self.ClusterDNSName])
+      TR.info(methodName, "Invoking: helm repo add --ca-file {cacert} --cert-file {helmcert} --key-file {helmkey} mgmt-charts https://{cluster}:8443/mgmt-repo/charts".format(cacert=self.ClusterCertPath,helmcert=self.HelmCertPath,helmkey=self.HelmKeyPath,cluster=self.ClusterDNSName))
+      output = check_output(["helm", "repo", "add", "--ca-file", self.ClusterCertPath, "--cert-file", self.HelmCertPath, "--key-file", self.HelmKeyPath, "mgmt-charts", "https://%s:8443/mgmt-repo/charts" % self.ClusterDNSName])
+      # Use default ca, key, cert - DOES NOT WORK
+      #TR.info(methodName, "Invoking: helm repo add mgmt-charts https://{cluster}:8443/mgmt-repo/charts".format(cluster=self.ClusterDNSName))
+      #output = check_output(["helm", "repo", "add", "mgmt-charts", "https://%s:8443/mgmt-repo/charts" % self.ClusterDNSName], env=helmEnv)
       if (output): TR.info(methodName,"helm repo add mgmt-charts output:\n%s" % output.rstrip())
     except CalledProcessError as e:
       if (e.output): TR.info(methodName,"ERROR: repo add mgmt-charts output:\n%s" % e.output.rstrip())

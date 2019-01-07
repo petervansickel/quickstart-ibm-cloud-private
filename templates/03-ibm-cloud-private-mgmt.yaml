@@ -78,10 +78,11 @@ Parameters:
       The number of Availability Zones.
     Type: Number
 
-  AvailabilityZones:
-    Description: >-
-      List of Availability Zones to use for the management node auto-scaling group.
-    Type: String
+#  AvailabilityZones:
+#    Description: >-
+#      List of Availability Zones to use for the Management node auto-scaling group.
+    #Type: String
+#    Type: List<AWS::EC2::AvailabilityZone::Name>
 
   ICPClusterNodeScriptPackagePath:
     Description: >-
@@ -137,19 +138,13 @@ Parameters:
 
   ManagementNodeCount:
     Description: >-
-      Number of management nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.  The management nodes run the resource and log monitoring monitoring components, e.g., Prometheus, Grafana and the ELK stack.
-    Type: String
-    Default: 1
+      Number of Management nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.  The Management nodes run the resource and log monitoring monitoring components, e.g., Prometheus, Grafana and the ELK stack.
+    Type: Number
 
   ManagementNodeInstanceType:
-    Description: ICP management node AWS EC2 instance type
+    Description: ICP Management node AWS EC2 instance type
     Type: String
-    Default: m5d.2xlarge
     AllowedValues:
-      - t2.micro
-      - t2.large
-      - t2.xlarge
-      - t2.2xlarge
       - m5.xlarge
       - m5.2xlarge
       - m5d.xlarge
@@ -158,7 +153,7 @@ Parameters:
 
   PrivateSubnetIds:
     Description: >-
-      A comma delimted list of private subnet resource IDs passed in from the parent stack. The PrivateSubnetIds are used to configure the management node auto-scaling group.
+      A comma delimted list of private subnet resource IDs passed in from the parent stack. The PrivateSubnetIds are used to configure the Management node auto-scaling group.
     Type: String
 
   ResourceOwner:
@@ -175,6 +170,7 @@ Mappings:
   # See https://cloud-images.ubuntu.com/locator/ec2/
   # Builds needed that support HVM, Elastic Network Adapter (ENA)
   # in order to use the MD5 instance types.
+  # Use EBS backed storage as opposed "instance-store", e.g., hvm:ebs-ssd
   # TODO - Update EU an AP
   AWSRegionAMIEC2:
     us-east-1:
@@ -190,7 +186,9 @@ Mappings:
     eu-central-1:
       Ubuntu16: ami-a9a557c6
     ap-northeast-1:
-      Ubuntu16: ami-d82efcb9
+      Ubuntu16: ami-032f516e93380b8e6
+    ap-northeast-2:
+      Ubuntu16: ami-0eee4dcc71fced4cf
     ap-southeast-1:
       Ubuntu16: ami-d554f1b6
     ap-southeast-2:
@@ -300,7 +298,7 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
       LaunchConfigurationName: !Ref ManagementNodeLaunchConfiguration
-      AvailabilityZones: !Split [',', !Ref AvailabilityZones]
+#      AvailabilityZones: !Split [',', !Ref AvailabilityZones]
       VPCZoneIdentifier: !Split [',', !Ref PrivateSubnetIds]
       DesiredCapacity: !Ref ManagementNodeCount
       MinSize: 1
@@ -319,5 +317,5 @@ Resources:
 Outputs:
   StackId:
     Description: >-
-      The Management node stack resource ID.  Needed for introspection of the management node stack to pull out the EC2 instance information.
+      The Management node stack resource ID.  Needed for introspection of the Management node stack to pull out the EC2 instance information.
     Value: !Ref AWS::StackId

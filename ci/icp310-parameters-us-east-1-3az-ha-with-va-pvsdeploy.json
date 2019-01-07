@@ -9,11 +9,11 @@
   },
   {
     "ParameterKey": "AvailabilityZoneCount",
-    "ParameterValue": "1"
+    "ParameterValue": "3"
   },
   {
     "ParameterKey": "AvailabilityZones",
-    "ParameterValue": "us-east-1f"
+    "ParameterValue": "us-east-1c,us-east-1d,us-east-1f"
   },
   {
     "ParameterKey": "AppSubdomainPrefix",
@@ -24,8 +24,8 @@
     "ParameterValue": "m5.xlarge"
   },
   {
-    "ParameterKey": "ExcludedMgmtServices",
-    "ParameterValue": "istio,custom-metrics-adapter"
+    "ParameterKey": "ClusterName",
+    "ParameterValue": "pvscluster"
   },
   {
     "ParameterKey": "ExternalApplicationLocation",
@@ -61,7 +61,7 @@
   },
   {
     "ParameterKey": "ManagementNodeCount",
-    "ParameterValue": "1"
+    "ParameterValue": "3"
   },
   {
     "ParameterKey": "ManagementNodeInstanceType",
@@ -69,7 +69,7 @@
   },
   {
     "ParameterKey": "MasterNodeCount",
-    "ParameterValue": "1"
+    "ParameterValue": "3"
   },
   {
     "ParameterKey": "MasterNodeInstanceType",
@@ -77,11 +77,11 @@
   },
   {
     "ParameterKey": "PrivateSubnets",
-    "ParameterValue": "10.10.10.0/24"
+    "ParameterValue": "10.10.10.0/24, 10.10.11.0/24, 10.10.12.0/24"
   },
   {
     "ParameterKey": "ProxyNodeCount",
-    "ParameterValue": "1"
+    "ParameterValue": "3"
   },
   {
     "ParameterKey": "ProxyNodeInstanceType",
@@ -89,7 +89,7 @@
   },
   {
     "ParameterKey": "PublicSubnets",
-    "ParameterValue": "10.10.20.0/24"
+    "ParameterValue": "10.10.20.0/24, 10.10.21.0/24, 10.10.22.0/24"
   },
   {
     "ParameterKey": "QSS3BucketName",
@@ -100,20 +100,20 @@
     "ParameterValue": "Peter.VanSickel"
   },
   {
-    "ParameterKey": "VPCName",
-    "ParameterValue": "ICPTest-VPC"
-  },
-  {
     "ParameterKey": "VPCDomain",
     "ParameterValue": "icp-test.com"
   },
   {
+    "ParameterKey": "VPCName",
+    "ParameterValue": "ICPTest-VPC"
+  },
+  {
     "ParameterKey": "VulnerabilityAdvisorNodeCount",
-    "ParameterValue": "1"
+    "ParameterValue": "3"
   },
   {
     "ParameterKey": "WorkerNodeCount",
-    "ParameterValue": "2"
+    "ParameterValue": "3"
   },
   {
     "ParameterKey": "WorkerNodeInstanceType",

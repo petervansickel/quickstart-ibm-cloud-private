@@ -19,7 +19,7 @@ Cluster node log files:
 
 If something is so misconfigured that the `bootstrap` or `nodeinit` script does not run and generate a log, then the best sources of problem determination information are in the log files in `/var/log/`, with `syslog` being a good place to find root causes for errors. The CloudFormation (CFN) logs are generally easier to read than `syslog` but they don't always have the content that `syslog` has.
 
-As long as `bootstrap.py` (on the boot node) and `nodeinit.py` (on the cluster nodes) gets started, the respective log file will have a full stack dump of any errors encountered.
+As long as `bootstrap.py` (on the boot node) and `nodeinit.py` (on the cluster nodes) get started, the respective log file will have a full stack dump of any errors encountered.
 
 Keep in mind you can only get to the cluster nodes via `ssh` from the boot node.  It may be that an error occurs before `ssh` can be configured to work between the boot node and the cluster nodes. If that is the case, then the templates need to be reconfigured to use the public subnet(s) for the cluster nodes and the EC2 key-pair will need to be added to at least one of the cluster node instances in order to `ssh` onto the node to see what is going wrong such that `nodeinit.py` is not even getting started or why `nodeinit.py` is failing.   
 

@@ -17,6 +17,7 @@ import shutil
 '''
 StringSeparators = ", ;:"
 
+
 def stringType(x):
   """
     Return True if the given object x is a string type, i.e., unicode string or "regular" string.

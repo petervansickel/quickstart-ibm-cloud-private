@@ -1,7 +1,7 @@
 """
 Created on Nov 15, 2018
 
-@author: petervansickel
+@author: Peter Van Sickel - pvs@us.ibm.com
 """
 
 import os, fnmatch, yaml
@@ -77,9 +77,13 @@ class CommandHelper(object):
     variablesFiles = self.getYaml(self.commandPath, include=['variables'])
     if (not variablesFiles):
       if (TR.isLoggable(Level.FINEST)):
-        TR.finest(methodName,"No yaml found for kind variables. Only intrinsic variables in use.")
+        TR.finest(methodName,"No yaml found for kind variables; static command set use-case.")
       #endIf
     else:
+      if (len(variablesFiles) > 1):
+        TR.warning(methodName, "Multiple variables files is currently not supported.  Only the first variables file will be used.")
+      #endIf
+      
       # Only the first file of kind variables is processed      
       variablesPath = variablesFiles[0]
       if (TR.isLoggable(Level.FINEST)):
@@ -102,14 +106,27 @@ class CommandHelper(object):
       self.variableMap = variableMap
       self.variableNames = variableMap.keys()
       
+      # Custom VariableValues are optional, could be using only IntrinsicVariables.
       variableValues = variables.get('VariableValues')
       
-      if (TR.isLoggable(Level.FINEST)):
-        TR.finest(methodName,"Custom Variable Values: %s" % variableValues)
+      if (variableValues):
+        if (TR.isLoggable(Level.FINEST)):
+          TR.finest(methodName,"Custom Variable Values: %s" % variableValues)
+        #endIf
+      else:
+        if (TR.isLoggable(Level.FINEST)):
+          TR.finest(methodName,"No custom variable values defined.")
+        #endIf
       #endIf
       
       if (restArgs):
         self.variableValues = self.mergeArgValues(self.variableNames, variableValues, **restArgs)
+      else:
+        self.variableValues = variableValues
+      #endIf
+      
+      if (self.IntrinsicVariables):
+        self.variableValues = self.mergeArgValues(self.variableNames,self.variableValues,**self.IntrinsicVariables)
       #endIf
       
       if (TR.isLoggable(Level.FINEST)):
@@ -123,13 +140,13 @@ class CommandHelper(object):
   def __getattr__(self,attributeName):
     """
       Support for attributes that are defined in the IntrinsicVariableNames list
-      and with values in the StackParameters dictionary.  
+      and with values in the IntrinsicVariables dictionary.  
     """
     attributeValue = None
     if (attributeName in self.IntrinsicVariableNames):
       attributeValue = self.IntrinsicVariables.get(attributeName)
     else:
-      raise AttributeError("%s is not a StackParameterName" % attributeName)
+      raise AttributeError("%s is not an IntrinsicVariableName" % attributeName)
     #endIf
   
     return attributeValue
@@ -152,7 +169,7 @@ class CommandHelper(object):
   #endDef
 
   
-  def  mergeArgValues(self, variableNames, variableValues, **restArgs):
+  def mergeArgValues(self, variableNames, variableValues, **restArgs):
     """
       Return a reference to the variableValues dictionary with merged values for 
       the variableNames from restArgs
@@ -160,7 +177,7 @@ class CommandHelper(object):
       For each name in the variableNames list, check the restArgs to see if there
       is a value to use to update a name-value pair variableValues dictionary.
       The value of a given variable in restArgs takes precedence over the value
-      that is deined in the variables yaml.
+      that is defined in the variables yaml.
       
     """
     methodName = 'mergeArgValues'
@@ -189,22 +206,26 @@ class CommandHelper(object):
   def checkForMacros(self,line,parameterNames,keywordMap):
     """
       Return a dictionary with one or more key-value pairs from the keywordMap that 
-      have a macro substitution present in the given line.  
-      Otherwise, return an empty dictionary.  
+      have a macro substitution present in the given line.
       
-      Helper method for createConfigFile()
+      If parameterNames or keywordMap is empty (or None) then nothing to do and an
+      empty result is returned.  A static command file would have no parameters.
+        
+      Otherwise, return an empty dictionary. 
     """
     result = {}
-    for parmName in parameterNames:
-      macroName = keywordMap.get(parmName)
-      if (not macroName):
-        raise InvalidParameterException("The parameter name: %s was not found in the given keyword mappings hash map: %s" % (parmName,keywordMap))
-      #endIf
-      macro = "${%s}" % macroName
-      if (line.find(macro) >= 0):
-        result[parmName] = macroName
-      #endIf
-    #endFor
+    if (parameterNames and keywordMap):
+      for parmName in parameterNames:
+        macroName = keywordMap.get(parmName)
+        if (not macroName):
+          raise InvalidParameterException("The parameter name: %s was not found in the given keyword mappings hash map: %s" % (parmName,keywordMap))
+        #endIf
+        macro = "${%s}" % macroName
+        if (line.find(macro) >= 0):
+          result[parmName] = macroName
+        #endIf
+      #endFor
+    #endIf
     return result
   #endDef
   
@@ -214,7 +235,7 @@ class CommandHelper(object):
       Using the template file, fill in all the variable strings in the template
       using the given parameters.
       
-      Required restArgs:
+      Optional restArgs:
         parameters: Dictionary with the actual values of the parameters
                     The parameter values will be substituted for the corresponding
                     macro in the template file to create the configuration file.
@@ -222,12 +243,11 @@ class CommandHelper(object):
         keywordMap: The mapping of parameter names to macro names (keywords) in the
                     template file.
                     
-      Optional restArgs:
         specialValues: Dictionary used for macro name that requires a special format  
                        string to be used when doing the macro substitution.
                        Defaults to an empty dictionary.
             
-      Comment lines in the template file are written immediately to the config file.
+      Comment lines in the template file are written immediately to the command file.
       
       A macro in the template file is delimited by ${} with the macro name in the {}.
       
@@ -243,28 +263,33 @@ class CommandHelper(object):
     #endIf
   
     parameters = restArgs.get('parameters')
-    if (not parameters):
-      raise MissingArgumentException("Parameters must be provided.")
+    if (parameters):   
+      if (TR.isLoggable(Level.FINEST)):
+        TR.finest(methodName,"Parameters: %s" % parameters)
+      #endIf
+      parameterNames = parameters.keys()
+    else:
+      parameterNames = []
     #endIf
     
-    if (TR.isLoggable(Level.FINEST)):
-      TR.finest(methodName,"Parameters: %s" % parameters)
+    keywordMap = restArgs.get('keywordMap',{})
+    if (keywordMap):
+      if (TR.isLoggable(Level.FINEST)):
+        TR.finest(methodName,"Keyword Map: %s" % keywordMap)
+      #endIf
     #endIf
     
-    keywordMap = restArgs.get('keywordMap')
-    if (not keywordMap):
-      raise MissingArgumentException("Keyword mappings must be provided.")
+    if (parameterNames and not keywordMap):
+      raise InvalidParameterException("A keyword map must be provided if there are substitution parameters")
     #endIf
     
-    if (TR.isLoggable(Level.FINEST)):
-      TR.finest(methodName,"Keyword Map: %s" % keywordMap)
+    if (keywordMap and not parameterNames):
+      parameterNames = keywordMap.keys()
     #endIf
     
     specialValues = restArgs.get('specialValues',{})
     specialValueNames = specialValues.keys()
-    
-    parameterNames = parameters.keys()
-    
+        
     try:
       with open(templateFilePath,'r') as templateFile, open(commandFilePath,'w') as commandFile:
         for line in templateFile:
@@ -318,51 +343,6 @@ class CommandHelper(object):
   #endDef
 
   
-  def createYamlFile(self, filePath, x):
-    """
-      Dump a yaml representation of the given object (x) to the given filePath. 
-    """
-    
-    if (not filePath):
-      raise MissingArgumentException("The file path (filePath) cannot be empty or None.")
-    #endIf
-    
-    if (not x):
-      raise MissingArgumentException("The object (x) to be dumped to the file cannot be empty or None.")
-    #endIf
-    
-    destDirPath = os.path.dirname(filePath)
-    
-    if (not os.path.exists(destDirPath)):
-      os.makedirs(destDirPath)
-    #endIf
-    
-    with open(filePath, 'w') as yamlFile:
-      yaml.dump(x,yamlFile,default_flow_style=False)
-    #endWith
-    
-    return filePath
-  #endDef
-  
-  
-  def processFileOption(self,destDirPath,optionValue,obj):
-    """
-      Processing for the -f option of a kubectl command.
-      
-      Helper to createCommands()
-    """
-    if (not optionValue.endswith(".yaml")):
-      fileName = "%s.yaml" % optionValue
-    else:
-      fileName = optionValue
-    #endIf
-    
-    filePath = os.path.join(destDirPath,fileName)
-    self.createYamlFile(filePath,obj)
-    return filePath
-  #endDef
-  
-  
   def createCommands(self,commandPath):
     """
       Return list of command dictionaries where each command dictionary has the command
@@ -378,43 +358,52 @@ class CommandHelper(object):
       
       Each command is defined by the .yaml command template and the substitution of actual  
       values for the macro expressions in the templates.
+      
+      The commands are sorted based on a simple string sort of the file names in the commandPath.
     """
+    methodName = "createCommands"
     
     commands = []
     
-    stagingDir = os.path.join(os.getcwd(),'staging')
-    if (not os.path.exists(stagingDir)):
-      os.makedirs(stagingDir)
-    #endIf
-    
     cmdTemplates = self.getYaml(commandPath,exclude=['variables'])
-    for template in cmdTemplates:
-      baseName = os.path.basename(template)
-      rootName,ext = os.path.splitext(baseName)
-      cmdFilePath = os.path.join(stagingDir,"%s-command%s" % (rootName,ext))
-      
-      self.createCommandFile(commandFilePath=cmdFilePath,
-                            templateFilePath=template,
-                            parameters=self.variableValues,
-                            keywordMap=self.variableMap)
-      
-      with open(cmdFilePath, 'r') as cmdFile:
-        cmdDocs = list(yaml.load_all(cmdFile))
-      #endWith
-      
-      cmdDoc0  = cmdDocs[0]
-      cmdKind = cmdDoc0.get('kind')
-      
-      helperClass = CommandHelpers.get(cmdKind)
-      if (not helperClass):
-        raise CommandInterpreterException("CommandHelpers has no helper class for command kind: %s" % cmdKind)
+    if (not cmdTemplates):
+      TR.warning(methodName,"No command template files found in: %s" % commandPath)
+    else:
+      stagingDir = os.path.join(os.getcwd(),'staging')
+      # Command files get created in the staging directory.
+      if (not os.path.exists(stagingDir)):
+        os.mkdir(stagingDir)
       #endIf
-      helper = helperClass()
-      cmd = helper.createCommand(cmdDocs)
-            
-      commands.append(cmd)
-    #endFor
-    
+      
+      if (len(cmdTemplates) > 1): cmdTemplates.sort()
+      
+      for template in cmdTemplates:
+        baseName = os.path.basename(template)
+        rootName,ext = os.path.splitext(baseName)
+        cmdFilePath = os.path.join(stagingDir,"%s-command%s" % (rootName,ext))
+        
+        self.createCommandFile(commandFilePath=cmdFilePath,
+                              templateFilePath=template,
+                              parameters=self.variableValues,
+                              keywordMap=self.variableMap)
+        
+        with open(cmdFilePath, 'r') as cmdFile:
+          cmdDocs = list(yaml.load_all(cmdFile))
+        #endWith
+        
+        cmdDoc0  = cmdDocs[0]
+        cmdKind = cmdDoc0.get('kind')
+        
+        helperClass = CommandHelpers.get(cmdKind)
+        if (not helperClass):
+          raise CommandInterpreterException("CommandHelpers has no helper class for command kind: %s" % cmdKind)
+        #endIf
+        helper = helperClass()
+        cmd = helper.createCommand(cmdDocs,stagingDirPath=stagingDir)
+              
+        commands.append(cmd)
+      #endFor
+    #endIf    
     return commands
   #endDef
   
@@ -436,18 +425,20 @@ class CommandHelper(object):
     
     try:
       commands = self.createCommands(self.commandPath)
-      for command in commands:
-        if (TR.isLoggable(Level.FINEST)):
-          TR.finest(methodName,"Command: %s" % command)
-        #endIf
-        cmdStr = command.get('cmdString')
-        cmdList = command.get('cmdList')
-        TR.info(methodName, "Invoking: %s" % cmdStr)
-        retcode = call(cmdList)
-        if (retcode != 0):
-          raise Exception("Invoking: '%s' Return code: %s" % (cmdStr,retcode))
-        #endIf
-      #endFor
+      if (commands):
+        for command in commands:
+          if (TR.isLoggable(Level.FINEST)):
+            TR.finest(methodName,"Command: %s" % command)
+          #endIf
+          cmdStr = command.get('cmdString')
+          cmdList = command.get('cmdList')
+          TR.info(methodName, "Invoking: %s" % cmdStr)
+          retcode = call(cmdList)
+          if (retcode != 0):
+            raise Exception("Invoking: '%s' Return code: %s" % (cmdStr,retcode))
+          #endIf
+        #endFor
+      #endIf
     except Exception as e:
       TR.error(methodName,"ERROR: %s" % e, e)
       raise
