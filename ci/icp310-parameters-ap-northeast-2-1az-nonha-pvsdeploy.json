@@ -8,10 +8,6 @@
     "ParameterValue": "icpadmin"
   },
   {
-    "ParameterKey": "ApplicationDomains",
-    "ParameterValue": "apps.pvs-test.apic-demo.com"
-  },
-  {
     "ParameterKey": "AppSubdomainPrefix",
     "ParameterValue": "apps"
   },

@@ -406,8 +406,6 @@
 # Import Python module for dealing with dates and time and time zone names
 import datetime
 import time
-
-
 import thread
 
 # Lock is needed for ensuring thread safe file IO when 

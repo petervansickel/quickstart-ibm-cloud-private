@@ -443,12 +443,43 @@ Resources:
 
           # Needed for the bootstrap script introspection of the stacks
           # Also for modifying security groups post deployment, once IP addresses are known.
-        - PolicyName: EC2AccessPolicy
+        - PolicyName: EC2StackAccessPolicy
           PolicyDocument:
             Version: 2012-10-17
             Statement:
               - Action:
-                  - 'ec2:*'
+                  - ec2:DescribeStacks
+                  - ec2:DescribeInstanceAttribute
+                  - ec2:DescribeInstanceStatus
+                  - ec2:DescribeInstances
+                  - ec2:DescribeNetworkInterfaces
+                  # ModifyInstanceAttribute needed to disable source_dest_check
+                  # NOTE: Disabling source_dest_check does not seem to be necessary.
+                  # - ec2:ModifyInstanceAttribute,
+                Effect: Allow
+                Resource: '*'
+
+          # Needed for modifying security groups post deployment,
+          # once IP addresses are known.  (See SecurityHelper in the bootstrap script.)
+          # For some doc, see:
+          # https://docs.aws.amazon.com/IAM/latest/UserGuide/reference_policies_examples_ec2_securitygroups-vpc.html
+        - PolicyName: EC2SecurityGroupAccessPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Action:
+                  - ec2:AuthorizeSecurityGroupEgress
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - ec2:CreateSecurityGroup
+                  - ec2:DeleteSecurityGroup
+                  - ec2:RevokeSecurityGroupEgress
+                  - ec2:RevokeSecurityGroupIngress
+                Effect: Allow
+                # May want to narrow this down to specific security group(s)
+                Resource: '*'
+              - Action:
+                  - ec2:DescribeSecurityGroups
+                  - ec2:DescribeSecurityGroupReferences
                 Effect: Allow
                 Resource: '*'
 

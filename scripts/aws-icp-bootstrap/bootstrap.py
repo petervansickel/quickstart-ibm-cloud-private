@@ -158,8 +158,7 @@ IntrinsicVariableNames = [
     "ICPVersion",
     "KubeCertPath",
     "KubeKeyPath",
-    "NATGatewayPublicIPv4Address",
-    "ProxyDNSName"
+    "NATGatewayPublicIPv4Address"
   ]
 
 IntrinsicVariables = {}
@@ -1678,13 +1677,14 @@ class Bootstrap(object):
     TR.info(methodName,"STARTED restart of kubelet and docker on all cluster nodes.")
     
     playbookPath = os.path.join(self.home,"playbooks","restart-kubelet-and-docker.yaml")
-    self.runAnsiblePlaybook(playbookPath=playbookPath,targetNodes="icp")
+    logFilePath = os.path.join(self.logsHome,"restart-kubelet-and-docker.log")
+    self.runAnsiblePlaybook(playbookPath=playbookPath,targetNodes="icp",logFilePath=logFilePath)
     
     TR.info(methodName,"COMPLETED restart of kubelet and docker on all cluster nodes.")
   #endDef
   
 
-  def runAnsiblePlaybook(self, playbookPath=None, targetNodes="all", inventory="/etc/ansible/hosts"):
+  def runAnsiblePlaybook(self, playbookPath=None, targetNodes="all", inventory="/etc/ansible/hosts", logFilePath=None):
     """
       Invoke a shell script to run an Ansible playbook with the given arguments.
       
@@ -1697,8 +1697,12 @@ class Bootstrap(object):
     #endIf
     
     try:
-      TR.info(methodName,"Executing ansible-playbook with: playbook=%s, nodes=%s, inventory=%s." % (playbookPath,targetNodes,inventory))
-      retcode = call(["ansible-playbook", playbookPath, "--extra-vars", "target_nodes=%s" % targetNodes, "--inventory", inventory ] )
+      TR.info(methodName,'Executing: ansible-playbook %s, --extra-vars "target_nodes=%s" --inventory=%s.' % (playbookPath,targetNodes,inventory))
+      if (logFilePath):
+        retcode = call('ansible-playbook %s --extra-vars "target_nodes=%s" --inventory %s >> %s 2>&1' % (playbookPath, targetNodes,inventory,logFilePath), shell=True)
+      else:
+        retcode = call('ansible-playbook %s --extra-vars "target_nodes=%s" --inventory %s' % (playbookPath, targetNodes,inventory), shell=True)        
+      #endIf
       if (retcode != 0):
         raise Exception("Error calling ansible-playbook. Return code: %s" % retcode)
       else:
@@ -2446,10 +2450,12 @@ class Bootstrap(object):
       
       # set vm.max_map_count on all cluster members
       setMaxMapCountPlaybookPath = os.path.join(self.home,"playbooks", "set-vm-max-mapcount.yaml")
-      self.runAnsiblePlaybook(playbookPath=setMaxMapCountPlaybookPath,targetNodes="all")
+      logFilePath = os.path.join(self.logsHome,"set-vm-max-mapcount.log")
+      self.runAnsiblePlaybook(playbookPath=setMaxMapCountPlaybookPath,targetNodes="all",logFilePath=logFilePath)
       
       installDockerPlaybookPath = os.path.join(self.home,"playbooks", "install-docker.yaml")
-      self.runAnsiblePlaybook(playbookPath=installDockerPlaybookPath,targetNodes="all")
+      logFilePath = os.path.join(self.logsHome,"install-docker.log")
+      self.runAnsiblePlaybook(playbookPath=installDockerPlaybookPath,targetNodes="all",logFilePath=logFilePath)
       
       # Notify all cluster nodes that docker installation has completed.
       # Cluster nodes will proceed with loading ICP installation images locally from the ICP install archive. 

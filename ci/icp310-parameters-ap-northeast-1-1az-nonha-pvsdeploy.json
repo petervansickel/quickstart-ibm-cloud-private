@@ -16,10 +16,6 @@
     "ParameterValue": "ap-northeast-1a"
   },
   {
-    "ParameterKey": "ApplicationDomains",
-    "ParameterValue": "myapps.icp-test.com"
-  },
-  {
     "ParameterKey": "BootNodeInstanceType",
     "ParameterValue": "m5.xlarge"
   },

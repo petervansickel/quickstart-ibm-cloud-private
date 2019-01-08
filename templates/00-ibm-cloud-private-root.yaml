@@ -94,8 +94,6 @@ Metadata:
         default: ICP super user password
       AdminUser:
         default: ICP super user name
-      ApplicationDomains:
-        default: Application domains
       ApplicationStorageMountPoint:
         default: Application storage mount point
       AppSubdomainPrefix:
@@ -201,12 +199,6 @@ Parameters:
     Description: >-
       IBM Cloud Private administrator (super user) name.
     Type: String
-
-  ApplicationDomains:
-    Description: >-
-      A list of fully qualified domain names used for applications.  Each name gets an alias record in the Route53 DNS to the Proxy node Elastic Load Balancer public DNS name. The ApplicationDomains must be consistent with the VPCDomain. The type is String to allow passing to BootNodeStack. The string is a comma delimited list.  The list may be a single element.
-    Type: String
-    Default: myapps.example.com
 
   ApplicationStorageMountPoint:
     Description: >-
@@ -709,10 +701,8 @@ Resources:
         - !Ref VPCHostedZone
         - !Ref VPCHostedZoneId
       RecordSets:
-        # DNS entry to map clustername.VPCDomain
+        # DNS entry to map ICP cluster DNS name
         # to the master node ELB public DNS name.
-        # TODO: This may need to be the value of ClusterCADomain.
-        # Need to investigate further.  Talk to Jeff Kwong.
         - Name: !If
           - EmptySubdomainPrefix
           - !Join ['.', [!Ref ClusterName, !Ref VPCDomain]]
@@ -722,10 +712,6 @@ Resources:
             HostedZoneId: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerHostedZoneID
           Type: A
         # DNS entry to map application domain
-        # to the proxy node ELB public DNS name.
-        # Only the first domain in the ApplicationDomains list is added here.
-        # The remaining names in the ApplicationDomains parameter are added
-        # in the bootstrap script.
         - Name: !If
           - EmptySubdomainPrefix
           - !Join ['.', ['*', !Ref AppSubdomainPrefix, !Ref VPCDomain]]
@@ -820,7 +806,6 @@ Resources:
       Parameters:
         AdminPassword: !Ref AdminPassword
         AdminUser: !Ref AdminUser
-        ApplicationDomains: !Ref ApplicationDomains
         ApplicationStorageMountPoint: !Ref ApplicationStorageMountPoint
         BootNodeInstanceType: !Ref BootNodeInstanceType
         BootNodeProfile: !GetAtt IAMResources.Outputs.BootNodeProfile
@@ -852,7 +837,6 @@ Resources:
         KeyName: !Ref KeyName
         MasterNodeCount: !Ref MasterNodeCount
         NATGatewayPublicIPs: !GetAtt PrivateSubnetStack.Outputs.NATGatewayPublicIPs
-        ProxyDNSName: !Select [0, !Split [',', !Ref ApplicationDomains]]
         ProxyELBHostedZoneID: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerHostedZoneID
         WhichClusterLBAddress: !Ref WhichClusterLBAddress
         WhichProxyLBAddress: !Ref WhichProxyLBAddress
@@ -1044,6 +1028,19 @@ Outputs:
   ProxyNodeLoadBalancerName:
     Description: The DNS name of the ICP Proxy node Elastic Load Balancer.
     Value: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerDNSName
+
+  ICPManagementConsole:
+    Description: >-
+      IBM Cloud Private management console URL.  If you are using a HostedZone with a public domain name, then the cluster DNS name used in the URL should resolve.  Otherwise, you will need to create an alias entry in your DNS that maps the cluster DNS name to the master node load balancer public DNS name provided in the output above.  For testing purposes you can create an entry in your /etc/hosts file that maps one of the IP addresses of the master node load balancer to the cluster DNS name. (Use nslookup to get the IP address(es) of the master node load balancer.)
+    Value: !If
+      - EmptySubdomainPrefix
+      - !Sub https://${ClusterName}.${VPCDomain}:8443/
+      - !Sub https://${ClusterName}.${VPCSubdomainPrefix}.${VPCDomain}:8443/
+
+  ICPAdminUserAndPassword:
+    Description: >-
+      The user name and password of the IBM Cloud Private cluster administrator (super user).
+    Value: !Sub ${AdminUser}/${AdminPassword}
 
   EFSDNSName:
     Description: >-

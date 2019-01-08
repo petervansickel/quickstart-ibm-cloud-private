@@ -37,7 +37,6 @@ kind: variables
 #
 VariableKeywordMap:
   ClusterDNSName: CLUSTER_DNS_NAME
-  ProxyDNSName: PROXY_DNS_NAME
   TADB_UserName: TA_DB_USERNAME
   TADB_Password: TA_DB_SECRET
   TA_StorageClass: TA_STORAGE_CLASS

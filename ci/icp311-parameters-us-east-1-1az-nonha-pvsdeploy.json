@@ -16,16 +16,8 @@
     "ParameterValue": "us-east-1f"
   },
   {
-    "ParameterKey": "ApplicationDomains",
-    "ParameterValue": "myapps.example.com"
-  },
-  {
     "ParameterKey": "BootNodeInstanceType",
     "ParameterValue": "m5.xlarge"
-  },
-  {
-    "ParameterKey": "CustomArtifactsPath",
-    "ParameterValue": "custom/aws.zip"
   },
   {
     "ParameterKey": "ExternalSSHLocation",

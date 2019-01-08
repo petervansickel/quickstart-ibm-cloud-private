@@ -91,11 +91,6 @@ Parameters:
       IBM Cloud Private administrator (super user) name.
     Type: String
 
-  ApplicationDomains:
-    Description: >-
-      A list of fully qualified domain names used for applications.  Each name gets an alias record in the Route53 DNS to the Proxy node Elastic Load Balancer public DNS name. The ApplicationDomains must be consistent with the VPCDomain.
-    Type: CommaDelimitedList
-
   ApplicationStorageMountPoint:
     Description: >-
       Mount point for the EFS volume to be used for application shared storage.  The Kubernetes EFS provisioner uses this mount point. Used by the bootstrap script.
@@ -245,11 +240,6 @@ Parameters:
     Description: >-
       Comma separated list of public IPs associated with the NAT gateways defined for the private subnets. The NAT gateway IPs are added to the MasterICPSecurityGroup ingress rules for the various ports. Particularly for an HA deployment, the NAT gateway IPs must be permitted to access the master nodes via the Master node ElasticLoadBalancers.  The cluster nodes on the private subnets access Master node services via the Master node ELBs. That cluster node network traffic takes on the public IP address of the NAT gateways in order to flow to the master node ELBs.
     Type: CommaDelimitedList
-
-  ProxyDNSName:
-    Description: >-
-      The ProxyDNSName is the primary name (i.e., the first in the list) of the names in the ApplicationDomains.  It is an alias for the Proxy ELB public DNS name.  ProxyDNSName is an intrinsic variable of the ICP cluster.
-    Type: String
 
   ProxyELBHostedZoneID:
     Description: >-
