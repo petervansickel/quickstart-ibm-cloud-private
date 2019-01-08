@@ -94,10 +94,6 @@ class NodeInit(object):
     self.sshHome = "%s/.ssh" % self.home
     self.fqdn = socket.getfqdn()
     self.rc = 0
-    self.ssm = boto3.client('ssm')
-    self.s3  = boto3.client('s3')
-    self.cfnClient = boto3.client('cloudformation')
-    self.cfnResource = boto3.resource('cloudformation')    
   #endDef
 
 
@@ -144,6 +140,13 @@ class NodeInit(object):
     """
     methodName = "_init"
     global StackParameters, StackParameterNames
+
+    # Use belt and suspenders to nail down the region.
+    boto3.setup_default_session(region_name=self.region)
+    self.ssm = boto3.client('ssm', region_name=self.region)
+    self.s3  = boto3.client('s3', region_name=self.region)
+    self.cfnClient = boto3.client('cloudformation', region_name=self.region)
+    self.cfnResource = boto3.resource('cloudformation')    
     
     StackParameters = self._getStackParameters(stackId)
     StackParameterNames = StackParameters.keys()

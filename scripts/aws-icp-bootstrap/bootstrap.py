@@ -249,13 +249,6 @@ class Bootstrap(object):
     self.sshHome = os.path.join(self.home,".ssh")
     self.fqdn = socket.getfqdn()
     self.sshKey = None
-    self.cfnClient = boto3.client('cloudformation')
-    self.cfnResource = boto3.resource('cloudformation')
-    self.ec2 = boto3.resource('ec2')
-    self.asg = boto3.client('autoscaling')
-    self.s3  = boto3.client('s3')
-    self.ssm = boto3.client('ssm')
-    self.route53 = boto3.client('route53')
     
     self.hosts = { 'master': [], 'worker': [], 'proxy': [], 'management': [], 'va': [], 'etcd': []}
     self.clusterHosts = []
@@ -551,6 +544,16 @@ class Bootstrap(object):
     """
     methodName = "_init"
     global StackParameters, StackParameterNames, IntrinsicVariables, IntrinsicVariableNames
+    
+    # use belt and suspenders to set the region - pre-signed URLs are region sensitive.
+    boto3.setup_default_session(region_name=self.region)
+    self.cfnClient = boto3.client('cloudformation', region_name=self.region)
+    self.cfnResource = boto3.resource('cloudformation')
+    self.ec2 = boto3.resource('ec2')
+    self.asg = boto3.client('autoscaling', region_name=self.region)
+    self.s3  = boto3.client('s3', region_name=self.region)
+    self.ssm = boto3.client('ssm', region_name=self.region)
+    self.route53 = boto3.client('route53', region_name=self.region)
     
     StackParameters = self.getStackParameters(bootStackId)
     StackParameterNames = StackParameters.keys()
