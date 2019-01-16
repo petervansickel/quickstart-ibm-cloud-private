@@ -1,0 +1,51 @@
+
+# Custom variable and keyword map
+# A minimum variables file must have a kind of variables and a VariableKeywordMap.
+# When the command files use only IntrinsicVariables only a VariableKeywordMap is 
+# needed to map the IntrinsicVariable names to macro names in the command files.
+# A variables file may also have a VariableValues entry that provides a set of
+# custom variables and their corresponding values. 
+# All variables (intrinsic or custom) that are used in the command files must have  
+# an entry in the VariableKeywordMap.
+# 
+---
+kind: variables
+
+# IntrinsicVariables get assigned a value based on the ICP deployment.
+# IntrinsicVariables do not need to have a value assigned to them in 
+# the VariableValues table below.
+# IntrinsicVariables that are used in command files for macro substitutions
+# must have an entry in VariableKeywordMap below to map the macro name back 
+# to the IntrinsicVariable name.
+# IntrinsicVariables:
+#  ClusterDNSName
+#  ProxyDNSName
+#  TBD - need to get the full list
+#
+# The VariableKeywordMap provides the mapping from the variable names
+# defined in this file to the keywords used to define macro substitutions
+# in the command files.
+#
+# The keywords are used in the command files in the same directory 
+# as this variables file.  It turns out to be convenient to have
+# one level of indirection between the variable names and the macro
+# names used for macro substitution in the command files.
+#
+# NOTE: All IntrinsicVariables used in a command file and all variables 
+# defined in the VariableValues table must have an entry in the VariableKeywordMap
+# in order for the macro substitutions to be properly executed.
+#
+VariableKeywordMap:
+  ClusterDNSName: CLUSTER_DNS_NAME
+  TADB_UserName: TA_DB_USERNAME
+  TADB_Password: TA_DB_SECRET
+  TA_StorageClass: TA_STORAGE_CLASS
+
+# Custom variable values
+# user name and password need to be base64 encoded
+# user: admin
+# password: secret01
+VariableValues:
+  TADB_UserName: YWRtaW4=
+  TADB_Password: c2VjcmV0
+  TA_StorageClass: aws-efs

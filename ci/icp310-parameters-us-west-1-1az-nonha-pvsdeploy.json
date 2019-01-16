@@ -1,0 +1,98 @@
+[
+  {
+    "ParameterKey": "AvailabilityZoneCount",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "AvailabilityZones",
+    "ParameterValue": "us-west-1b"
+  },
+  {
+    "ParameterKey": "ApplicationDomains",
+    "ParameterValue": "myapps.example.com"
+  },
+  {
+    "ParameterKey": "BootNodeInstanceType",
+    "ParameterValue": "m5.xlarge"
+  },
+  {
+    "ParameterKey": "ClusterPKIBucketName",
+    "ParameterValue": "aws-icp-quickstart-us-west-1"
+  },
+  {
+    "ParameterKey": "ClusterPKIRootPath",
+    "ParameterValue": "pki/mycluster.example.com"
+  },
+  {
+    "ParameterKey": "CustomArtifactsPath",
+    "ParameterValue": "custom/aws.zip"
+  },
+  {
+    "ParameterKey": "ExternalSSHLocation",
+    "ParameterValue": "213.74.115.106/32"
+  },
+  {
+    "ParameterKey": "ICPDeploymentLogsBucketName",
+    "ParameterValue": "aws-icp-quickstart-logs-us-west-1"
+  },
+  {
+    "ParameterKey": "KeyFilePath",
+    "ParameterValue": "keys/additional-keys"
+  },
+  {
+    "ParameterKey": "KeyName",
+    "ParameterValue": "pvs_key_us_west_1"
+  },
+  {
+    "ParameterKey": "ManagementNodeCount",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "ManagementNodeInstanceType",
+    "ParameterValue": "m5.2xlarge"
+  },
+  {
+    "ParameterKey": "MasterNodeCount",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "MasterNodeInstanceType",
+    "ParameterValue": "m5.2xlarge"
+  },
+  {
+    "ParameterKey": "PrivateSubnets",
+    "ParameterValue": "10.10.10.0/24"
+  },
+  {
+    "ParameterKey": "ProxyNodeCount",
+    "ParameterValue": "1"
+  },
+  {
+    "ParameterKey": "ProxyNodeInstanceType",
+    "ParameterValue": "m5.xlarge"
+  },
+  {
+    "ParameterKey": "PublicSubnets",
+    "ParameterValue": "10.10.20.0/24"
+  },
+  {
+    "ParameterKey": "QSS3BucketName",
+    "ParameterValue": "aws-icp-quickstart-us-west-1"
+  },
+  {
+    "ParameterKey": "ResourceOwner",
+    "ParameterValue": "Peter.VanSickel"
+  },
+  {
+    "ParameterKey": "VPCName",
+    "ParameterValue": "ICP310-VPC"
+  },
+  {
+    "ParameterKey": "WorkerNodeCount",
+    "ParameterValue": "2"
+  },
+  {
+    "ParameterKey": "WorkerNodeInstanceType",
+    "ParameterValue": "m5.xlarge"
+  }
+]
