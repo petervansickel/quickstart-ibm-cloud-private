@@ -28,7 +28,6 @@ Metadata:
         Parameters:
           - ClusterName
           - ClusterDomain
-          - ClusterCADomain
           - ClusterCIDR
           - ExcludedMgmtServices
           - ServiceCIDR
@@ -73,13 +72,13 @@ Metadata:
           - ExternalApplicationLocation
           - ExternalICPAdminLocation
           - ExternalSSHLocation
+          - HostedZoneId
           - PrivateSubnetCIDR
           - PrivateSubnets
           - PublicSubnetCIDR
           - PublicSubnets
           - VPCCIDR
           - VPCDomain
-          - VPCHostedZoneId
           - VPCSubdomainPrefix
           - AppSubdomainPrefix
 
@@ -104,8 +103,6 @@ Metadata:
         default: Availability zones
       BootNodeInstanceType:
         default: Boot node EC2 instance type
-      ClusterCADomain:
-        default: Cluster Certificate Authority domain
       ClusterCIDR:
         default: Cluster network CIDR
       ClusterDomain:
@@ -126,6 +123,8 @@ Metadata:
         default: External ICP admin location
       ExternalSSHLocation:
         default: External SSH location
+      HostedZoneId:
+        default: Hosted zone identifier
       ICPArchiveBucketRootName:
         default: ICP archive bucket root name
       ICPBootNodeScriptPackagePath:
@@ -168,8 +167,6 @@ Metadata:
         default: ICP service network CIDR
       VPCDomain:
         default: Virtual private cloud network domain
-      VPCHostedZoneId:
-        default: Virtual private cloud hosted zone identifier
       VPCName:
         default: Virtual private cloud name
       VPCSubdomainPrefix:
@@ -208,7 +205,7 @@ Parameters:
 
   AppSubdomainPrefix:
     Description: >-
-      The subdomain for applications DNS names.  A wildcard entry is put in Route53 that is of the form: *.AppSubdomainPrefix.VPCSubdomainPrefix.VPCDomain.
+      The subdomain for application DNS names.  If a VPCSubdomainPrefix is defined, a wildcard entry is put in Route53 that looks like: *.AppSubdomainPrefix.VPCSubdomainPrefix.VPCDomain. If the VPCSubdomainPrefix is empty, then the wildcard entry in Route53 looks like: *.AppSubdomainPrefix.VPCDomain.
     Type: String
     Default: apps
 
@@ -227,7 +224,7 @@ Parameters:
   # CommaDelimitedList also breaks stack parameters. :O
   AvailabilityZones:
     Description: >-
-      List of Availability Zones to use for the subnets in the VPC. Be careful to provide zones that support the instance types of the ICP cluster members. To get the names of Availability Zones available to you using the AWS CLI: aws ec2 describe-availability-zones
+      Comma delimited list (string) of Availability Zones to use for the subnets in the VPC. Be careful to provide zones that support the instance types of the ICP cluster members. Be sure the AvailabilityZoneCount input parameter is correct for the number of Availability Zones provided. One way to get the names of Availability Zones available to the current, default region is the AWS CLI: aws ec2 describe-availability-zones
     #Type: CommaDelimitedList
     #Type: List<AWS::EC2::AvailabilityZone::Name>
     Type: String
@@ -244,17 +241,9 @@ Parameters:
       - m5d.2xlarge
     ConstraintDescription: Must be a valid EC2 instance type.
 
-  # TBD: Delete this in favor of using the ClusterName.VPCDomain for the
-  # cluster CA domain.
-  ClusterCADomain:
-    Description: >-
-      The Certificate Authority (CA) domain used for the CN in the CA key.  The default is to use the cluster name concatenated with the VPC domain.
-    Type: String
-    Default: mycluster.example.com
-
   ClusterCIDR:
     Description: >-
-      The CIDR for the ICP cluster overlay network.  This gets assigned to the network_cidr attribute in config.yaml.  The value provided must be a network that does not overlap with the AWS VPC network (VPCCIDR).  It also must not overlap with the ICP service overlay network (SeviceCIDR).
+      The CIDR for the ICP cluster overlay network.  This gets assigned to the network_cidr attribute in the IBM Cloud Private installation config.yaml. The value provided must be a network that does not overlap with the AWS VPC network (VPCCIDR).  It also must not overlap with the IBM Cloud Private cluser service overlay network defined by the ServiceCIDR.
     Type: String
     MinLength: 9
     MaxLength: 18
@@ -269,13 +258,13 @@ Parameters:
   # Should be corrected in ICP 3.1.0 fixpack
   ClusterDomain:
     Description: >-
-      The network domain of the ICP cluster overlay network.
+      The network domain of the IBM Cloud Private cluster overlay network.
     Type: String
     Default: cluster.local
 
   ClusterName:
     Description: >-
-      The name of the cluster. The cluster name is combined with the VPC domain (VPCDomain) to form the cluster DNS name (ClusterDNSName). An alias record is created in Route53 that maps the ClusterDNSName to the master node load balancer DNS name.
+      The name of the cluster. The cluster name is combined with the VPC subdomain prefix (VPCSubdomainPrefix), if present, and the VPC domain (VPCDomain) to form the cluster DNS name (ClusterDNSName). An alias record is created in Route53 that maps the ClusterDNSName to the master node load balancer DNS name.
     Type: String
     Default: mycluster
 
@@ -287,7 +276,7 @@ Parameters:
 
   ClusterPKIRootPath:
     Description: >-
-      The path in the cluster PKI S3 bucket where the user defined PKI key and certificate files are found.  This is the key and certificate that used for the master node identity.  The CN of the key and certificate must be the same value that is provided in combination of the ClusterName and the VPCDomain. The extensions on the root path are assumed to be .key and .crt to get the key and certificate files respectively. DO NOT provide a leading / on the path value. If not provided, self-signed PKI artifacts will be created and used.
+      The path in the cluster PKI S3 bucket where the user defined PKI key and certificate files are found.  This is the key and certificate to be used for the master node identity.  The CN of the key and certificate must be the same value that is provided in combination of the ClusterName, VPCSubdomainPrefix (if provided) and the VPCDomain. The extensions on the root path are assumed to be .key and .crt to get the key and certificate files respectively. DO NOT provide a leading / on the path value. If not provided, self-signed PKI artifacts will be created and used.
     Type: String
     Default: ''
 
@@ -299,14 +288,14 @@ Parameters:
 
   ExcludedMgmtServices:
     Description: >-
-      Comma separated list of management services to be excluded from the IBM Cloud Private deployment.  Services that may be excluded are: service-catalog, metering, monitoring, istio, vulnerability-advisor, custom-metrics-adapter
+      Comma separated list of management services to be excluded from the IBM Cloud Private deployment.  Services that may be excluded are: service-catalog, metering, monitoring, istio, vulnerability-advisor, custom-metrics-adapter.  If Vulnerability Advisor is deployed, then obviously, do not include vulnerability-advisor in this list.
     Type: String
     Default:
       "istio,vulnerability-advisor,custom-metrics-adapter"
 
   ExternalApplicationLocation:
     Description: >-
-      The IP address range that can be used to get to ICP Proxy ELB for access to deployed workloads on the ICP worker nodes from the external network.
+      The IP address CIDR for IP addresses permitted to access the IBM Cloud Private Proxy nodes on ports 80 and 443. All deployed workloads are accessed through Proxy nodes. The value `0.0.0.0/0` permits all IP addresses to access the Proxy nodes. Additional values can be added post-deployment from the AWS CloudFormation console.
     Type: String
     MinLength: 9
     MaxLength: 18
@@ -314,11 +303,10 @@ Parameters:
       ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
     ConstraintDescription: >-
       Must be a valid IP CIDR range of the form x.x.x.x/x.
-    Default: 0.0.0.0/0
 
   ExternalICPAdminLocation:
     Description: >-
-      The IP address range that can be used to get to ICP Master ELB from the external network.
+      The IP address CIDR for IP addresses permitted to access the IBM Cloud Private Master nodes on the access ports (8001, 8080, 8443, 8500, 8600, 9443). The CIDR provided is intended to allow access for IBM Cloud Private administrators. Additional values can be added post-deployment from the AWS CloudFormation console.
     Type: String
     MinLength: 9
     MaxLength: 18
@@ -326,11 +314,10 @@ Parameters:
       ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
     ConstraintDescription: >-
       Must be a valid IP CIDR range of the form x.x.x.x/x.
-    Default: 0.0.0.0/0
 
   ExternalSSHLocation:
     Description: >-
-      The network CIDR for IP addresses that can be used to SSH to the boot node. In single user test situations this can be a /32 CIDR.  Additional values can be added post-deployment from the AWS CloudFormation console.
+      The network CIDR for IP addresses that can be used to SSH to the boot node. In single user test situations this can be a /32 CIDR.  Additional values can be added post-deployment from the AWS CloudFormation console. The CIDR provided is intended to allow access for IBM Cloud Private administrators. Additional values can be added post-deployment from the AWS CloudFormation console.
     Type: String
     MinLength: 9
     MaxLength: 18
@@ -339,9 +326,15 @@ Parameters:
     ConstraintDescription: >-
       Must be a valid IP CIDR range of the form x.x.x.x/x.
 
+  HostedZoneId:
+    Description: >-
+      If an existing DNS hosted zone is to be used, then the hosted zone ID needs to be specified with this parameter.  Leave it empty if a DNS hosted zone is to be created as part of the deployment.
+    Type: String
+    Default: ''
+
   ICPArchiveBucketRootName:
     Description: >-
-      The root name of the S3 bucket where the ICP and Docker installation artifacts are located.  For the QuickStart this gets a default (required) value of "ibm-cloud-private". The root name is used to form a full name that includes a dash (-), followed by the region name, e.g., ibm-cloud-private-us-east-1.  A bucket in each region is needed for efficiency of downloading the ICP installation artifacts to the deployed EC2 instances. The bucket name is needed to establish permission to access the ICP and Docker installation artifacts.
+      The root name of the S3 bucket where the ICP and Docker installation artifacts are located.  For the QuickStart this gets a default (required) value of "ibm-cloud-private". The root name is used to form a full name that includes a dash (-), followed by the region name, e.g., ibm-cloud-private-us-east-1.  A bucket in each region is needed for efficiency of downloading the ICP installation artifacts to the deployed EC2 instances. The bucket name is needed to establish permission to access the ICP and Docker installation artifacts. For the QuickStart the buckets have already been created in each AWS region and populated with the appropriate installation artifacts.
     Type: String
     Default: ibm-cloud-private
 
@@ -379,11 +372,13 @@ Parameters:
     Description: >-
       The version of ICP to be deployed.  The full version must be provided, e.g., 3.1.0.
     Type: String
+#    AllowedValues:
+#      - 3.1.0
     Default: 3.1.0
 
   InceptionTimeout:
     Description: >-
-      The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  For a small HA cluster (12 nodes) the inception process typically completes the installation in about 60 minutes. The start-to-finish installation time is on the order of 75 minutes for such a cluster.  The InceptionTimeout should be smaller than the InstallationTimeout.
+      The number of seconds to wait for the IBM Cloud Private inception container to complete the installation.  For a small HA cluster (12 nodes) the inception process typically completes the installation in about 60 minutes. The start-to-finish installation time is on the order of 75 minutes for such a cluster.  The InceptionTimeout should be equal to or smaller than the InstallationTimeout.
     Type: Number
     Default: 7200
 
@@ -395,7 +390,7 @@ Parameters:
 
   KeyName:
     Description: >-
-      Name of an existing EC2 KeyPair to enable SSH access to the instance
+      Name of an existing EC2 KeyPair to enable SSH access to the boot node.  The private half of this key pair is used by the deployer to deploy the IBM Cloud Private cluster.  This key is configured for SSH access to the boot node.  Anyone who is a deployer needs to create an EC2 KeyPair in the region in which the IBM Cloud Private cluster is to be deployed.
     Type: AWS::EC2::KeyPair::KeyName
     ConstraintDescription: Must be the name of an existing EC2 KeyPair.
 
@@ -438,7 +433,7 @@ Parameters:
 
   PrivateSubnetCIDR:
     Description: >-
-      The CIDR block to be used for the private subnets.
+      The CIDR block to be used for the private subnets. The PrivateSubnetCIDR must be within the network defined by the VPCCIDR and not overlap with the PublicSubnetCIDR
     Type: String
     Default: 10.10.10.0/20
 
@@ -481,7 +476,7 @@ Parameters:
 
   QSS3BucketName:
     Description: >-
-      The name of the S3 bucket where the ICP boostrap script packages are located. This bucket holds all of the content of the QuickStart git repository for IBM Cloud Private which includes the script packages for the boot node and the cluster nodes.  This bucket also holds the cloud formation templates that defines the ICP infrastructure deployed in the AWS cloud.
+      The name of the S3 bucket where the ICP boostrap script packages are located. This bucket holds all of the content of the QuickStart git repository for IBM Cloud Private which includes the script packages for the boot node and the cluster nodes.  This bucket also holds the cloud formation templates that define the ICP infrastructure deployed in the AWS cloud.
     Type: String
 
   QSS3KeyPrefix:
@@ -497,7 +492,7 @@ Parameters:
 
   ServiceCIDR:
     Description: >-
-      The CIDR for the ICP service overlay network.  This gets assigned to the service_cluster_ip_range attribute in config.yaml.  The value provided must be a network that does not overlap with the AWS VPC network (VPCCIDR).  It also must not overlap with the ICP cluster overlay network.
+      The CIDR for the ICP service overlay network.  This gets assigned to the service_cluster_ip_range attribute in IBM Cloud Private config.yaml.  The value provided must be a network that does not overlap with the AWS VPC network (VPCCIDR).  It also must not overlap with the ICP cluster overlay network (network_cidr) defined in the ClusterCIDR.
     Type: String
     MinLength: 9
     MaxLength: 18
@@ -521,14 +516,8 @@ Parameters:
 
   VPCDomain:
     Description: >-
-      The network domain of the VPC.  The VPCDomain is used when defining the hosted zone. If an existing hosted zone is to be used then provide the hosted zone ID in the VPCHostedZoneId parameter, otherwise a hosted zone will be created.  If a subdomain is to be created, then provide a VPCSubdomainPrefix.  When a VPCSubdomainPrefix is provided it is combined with the VPCDomain to form the full network domain name. The ClusterName is combined with the domain name to form the ClusterDNSName which is used in the ICP configuration for the cluster_CA_domain parameter in the config.yaml file.  (If PKI certificates are provided for the deployment the CN used for creating the certificates must match the match the value of ClusterName concatenated with a dot, concatenated with the VPCSubdomainPrefix (if provided), concatenated with the VPCDomain.)
+      The network domain of the VPC.  The VPCDomain is used when defining the hosted zone. If an existing hosted zone is to be used, then provide the hosted zone ID in the HostedZoneId parameter, otherwise a hosted zone will be created.  If a subdomain is to be created, then provide a VPCSubdomainPrefix.  When a VPCSubdomainPrefix is provided it is combined with the VPCDomain to form the full network domain name. The ClusterName is combined with the VPC subdomain, if privided, and the VPC domain name to form the ClusterDNSName, which is used in the IBM Cloud Private configuration for the cluster_CA_domain parameter in the config.yaml file.  (If PKI certificates are provided for the deployment the CN used for creating the certificates must match the match the value of ClusterName concatenated with a dot, concatenated with the VPCSubdomainPrefix (if provided), concatenated with the VPCDomain.)
     Type: String
-
-  VPCHostedZoneId:
-    Description: >-
-      If an existing hosted zone is to be used, then the hosted zone ID needs to be specified with this parameter.  Leave it empty if a hosted zone is to be created as part of the deployment.
-    Type: String
-    Default: ''
 
   VPCName:
     Description: The name of the deployed Virtual Private Cloud
@@ -537,7 +526,7 @@ Parameters:
 
   VPCSubdomainPrefix:
     Description: >-
-      If a subdomain is to be created as part of the deployment, then provide the sub-domain prefix with this parameter.  Otherwise the full domain is assumed to be provided as the value of the VPCDomain parameter. If a non-empty value is provided in the the VPCSubdomainPrefix a sub-domain is created and the full domain used for the deployment is the VPCSubdomainPrefix combined with the VPCDomain.
+      If a subdomain is to be created as part of the deployment, then provide the subdomain prefix with this parameter.  Otherwise, the full domain is assumed to be provided as the value of the VPCDomain parameter. If a non-empty value is provided in the VPCSubdomainPrefix, a subdomain is created and the full domain used for the deployment is the VPCSubdomainPrefix combined with the VPCDomain.
     Type: String
     Default: ''
 
@@ -570,7 +559,7 @@ Parameters:
       - UseMasterELBAddress
       - UseMasterELBName
       - UseClusterName
-    Default: 'UseClusterName'
+    Default: UseClusterName
 
   WhichProxyLBAddress:
     Description: >-
@@ -605,11 +594,11 @@ Parameters:
 
 
 Conditions:
-  EmptyHostedZoneId: !Equals [!Ref VPCHostedZoneId, '']
+  EmptyHostedZoneId: !Equals [!Ref HostedZoneId, '']
 
-  SetupSubDomain: !And
+  SetupSubdomain: !And
     - !Not [!Equals [!Ref VPCSubdomainPrefix, '']]
-    - !Not [!Equals [!Ref VPCHostedZoneId, '']]
+    - !Not [!Equals [!Ref HostedZoneId, '']]
 
   DeployVulnerabilityAdvisor: !Not [!Equals [!Ref VulnerabilityAdvisorNodeCount, 0]]
 
@@ -652,7 +641,7 @@ Resources:
       InternetGatewayId: !Ref InternetGateway
 
   # When the VPCs attribute has a value, the HostedZone is private.
-  # This resource does not get created if a VPCHostedZoneId is provided at launch.
+  # This resource does not get created if a HostedZoneId is provided at launch.
   VPCHostedZone:
     Condition: EmptyHostedZoneId
     Type: AWS::Route53::HostedZone
@@ -671,8 +660,10 @@ Resources:
         - Key: Owner
           Value: !Ref ResourceOwner
 
-  VPCSubDomainZone:
-    Condition: SetupSubDomain
+  # The VPCSubdomianHostedZone gets created if a HostedZoneId is provided
+  # and a VPCSubdomainPrefix is provided.
+  VPCSubdomainHostedZone:
+    Condition: SetupSubdomain
     Type: AWS::Route53::HostedZone
     Properties:
       HostedZoneConfig:
@@ -680,18 +671,27 @@ Resources:
           Sub-domain hosted zone for use by the deployed IBM Cloud Private cluster.
       Name: !Sub ${VPCSubdomainPrefix}.${VPCDomain}
 
-  VPCSubDomainNS:
-    Condition: SetupSubDomain
+
+  # Subdomain name server records
+  VPCSubdomainNS:
+    Condition: SetupSubdomain
     Type: AWS::Route53::RecordSet
     Properties:
-      HostedZoneId: !Ref VPCHostedZoneId
+      HostedZoneId: !Ref HostedZoneId
       Name: !Sub ${VPCSubdomainPrefix}.${VPCDomain}
-      ResourceRecords: !GetAtt VPCSubDomainZone.NameServers
+      ResourceRecords: !GetAtt VPCSubdomainHostedZone.NameServers
       Type: NS
       # TTL is of type String.  Go figure.
       TTL: "600"
 
 
+  # If a HostedZoneId is not provided, the ClusterDNSEntries are placed
+  # in the VPCHostedZone that gets created as part of this deployment.
+  # If a HostZoneId *is* provided but a VPCSubdomainPrefix was not provided,
+  # then the ClusterDNSEntries are placed in the hosted zone referenced by
+  # the HostedZoneId. If a HostedZoneId and a VPCSubdomainPrefix is provided,
+  # then the ClusterDNSEntries are placed in the subdomain hosted zone created
+  # as part of this deployment.
   ClusterDNSEntries:
     Type: AWS::Route53::RecordSetGroup
     Properties:
@@ -699,7 +699,7 @@ Resources:
       HostedZoneId: !If
         - EmptyHostedZoneId
         - !Ref VPCHostedZone
-        - !Ref VPCHostedZoneId
+        - !If [EmptySubdomainPrefix,!Ref HostedZoneId,!Ref VPCSubdomainHostedZone]
       RecordSets:
         # DNS entry to map ICP cluster DNS name
         # to the master node ELB public DNS name.
@@ -810,7 +810,6 @@ Resources:
         BootNodeInstanceType: !Ref BootNodeInstanceType
         BootNodeProfile: !GetAtt IAMResources.Outputs.BootNodeProfile
         BootNodeRole: !GetAtt IAMResources.Outputs.BootNodeRole
-        ClusterCADomain: !Ref ClusterCADomain
         ClusterCIDR: !Ref ClusterCIDR
         ClusterDNSName: !If
           - EmptySubdomainPrefix

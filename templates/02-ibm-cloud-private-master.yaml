@@ -149,12 +149,7 @@ Parameters:
   MasterNodeInstanceType:
     Description: ICP master node AWS EC2 instance type
     Type: String
-    Default: m5d.2xlarge
     AllowedValues:
-      - t2.micro
-      - t2.large
-      - t2.xlarge
-      - t2.2xlarge
       - m5.xlarge
       - m5.2xlarge
       - m5d.xlarge

@@ -40,6 +40,10 @@
     "ParameterValue": "108.39.143.97/32"
   },
   {
+    "ParameterKey": "HostedZoneId",
+    "ParameterValue": "Z1TXQISDLGPKT8"
+  },
+  {
     "ParameterKey": "ICPBootNodeScriptPackagePath",
     "ParameterValue": "scripts/aws-icp-bootstrap.zip"
   },
@@ -105,7 +109,11 @@
   },
   {
     "ParameterKey": "VPCDomain",
-    "ParameterValue": "icp-test.com"
+    "ParameterValue": "apic-demo.com"
+  },
+  {
+    "ParameterKey": "VPCSubdomainPrefix",
+    "ParameterValue": "icp"
   },
   {
     "ParameterKey": "VulnerabilityAdvisorNodeCount",

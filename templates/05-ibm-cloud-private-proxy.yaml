@@ -170,12 +170,7 @@ Parameters:
   ProxyNodeInstanceType:
     Description: ICP worker node AWS EC2 instance type
     Type: String
-    Default: m5d.xlarge
     AllowedValues:
-      - t2.micro
-      - t2.large
-      - t2.xlarge
-      - t2.2xlarge
       - m5.large
       - m5.xlarge
       - m5.2xlarge

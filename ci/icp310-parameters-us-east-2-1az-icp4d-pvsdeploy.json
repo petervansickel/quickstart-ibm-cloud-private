@@ -1,5 +1,13 @@
 [
   {
+    "ParameterKey": "AdminPassword",
+    "ParameterValue": "icpadmin"
+  },
+  {
+    "ParameterKey": "AdminUser",
+    "ParameterValue": "icpadmin"
+  },
+  {
     "ParameterKey": "AvailabilityZoneCount",
     "ParameterValue": "1"
   },
@@ -25,7 +33,7 @@
   },
   {
     "ParameterKey": "ExternalSSHLocation",
-    "ParameterValue": "73.225.52.165/32"
+    "ParameterValue": "108.39.143.97/32"
   },
   {
     "ParameterKey": "ICPBootNodeScriptPackagePath",

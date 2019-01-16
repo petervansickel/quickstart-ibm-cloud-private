@@ -24,7 +24,6 @@ Metadata:
         Parameters:
           - ClusterName
           - ClusterDomain
-          - ClusterCADomain
           - ClusterCIDR
           - ServiceCIDR
 
@@ -50,8 +49,6 @@ Metadata:
       # The parameter labels list is in aphabetical order
       BootNodeInstanceType:
         default: Boot Node EC2 Instance Type
-      ClusterCADomain:
-        default: Cluster CA Domain
       ClusterCIDR:
         default: ICP Cluster Network CIDR
       ClusterDomain:
@@ -110,12 +107,6 @@ Parameters:
       The resource ID of the BootNodeRole imported from the root template.
     Type: String
 
-  ClusterCADomain:
-    Description: >-
-      The Certificate Authority (CA) domain used for the CN in the CA key.  The default is to
-      use the cluster name concatenated with the cluster domain.
-    Type: String
-
   ClusterCIDR:
     Description: >-
       The CIDR for the ICP cluster overlay network.  This gets assigned to the network_cidr attribute in config.yaml.  The value provided must be a network that does not conflict with the AWS VPC network.  It also must not conflict with the ICP service overlay network.
@@ -129,7 +120,7 @@ Parameters:
 
   ClusterDNSName:
     Description: >-
-      The fully qualified domain name (FQDN) to be used for the cluster name. The ClusterDNSName must be the same value as the ClusterCADomain and the CN used in the cluster PKI key/certificate.
+      The fully qualified domain name (FQDN) to be used for the cluster name. The ClusterDNSName must be the same value as the CN used in the cluster PKI key/certificate.
     Type: String
 
   ClusterDomain:
@@ -149,7 +140,7 @@ Parameters:
 
   ClusterPKIRootPath:
     Description: >-
-      The path in the cluster PKI S3 bucket where the user defined PKI key and certificate files are found.  This is the key and certificate that used for the master node identity.  The CN of the key and certificate must be the same value that is provided in ClusterCADomain.  The extensions on the root path are assumed to be .key and .crt to get the key and certificate files respectively. DO NOT provide a leading / on the path value. If not provided, self-signed PKI artifacts will be created and used.
+      The path in the cluster PKI S3 bucket where the user defined PKI key and certificate files are found.  This is the key and certificate that used for the master node identity.  The CN of the key and certificate must be the same value that is provided in the ClusterDNSName.  The extensions on the root path are assumed to be .key and .crt to get the key and certificate files respectively. DO NOT provide a leading / on the path value. If not provided, self-signed PKI artifacts will be created and used.
     Type: String
 
   CustomArtifactsPath:

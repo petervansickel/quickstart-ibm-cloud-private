@@ -34,9 +34,11 @@ CloudFormation parameter files must be in JSON format because they are passed di
 
 - From a shell execute the command to kick off the root stack deployment:
 ```
-aws cloudformation create-stack --template-body file://~/git/aws-icp-quickstart/cloudformation/0.9.5/00-ibm-cloud-private-root.yaml --parameters file://~/git/aws-icp-quickstart/cloudformation/parameters/0.9.5/icp310-parameters-us-east-1-3az-ha-pvsdeploy.json --capabilities CAPABILITY_IAM --stack-name pvsICPTestStack-2018-1126-02
+aws cloudformation create-stack --template-body file://~/git/aws-icp-quickstart/cloudformation/0.9.5/00-ibm-cloud-private-root.yaml --parameters file://~/git/aws-icp-quickstart/cloudformation/parameters/0.9.5/icp310-parameters-us-east-1-3az-ha-pvsdeploy.json --capabilities CAPABILITY_IAM --stack-name pvsICPTestStack-2018-1126-02 --disable-rollback
 ```
 The `stack-name` must be unique in the AWS region.  The stack naming convention above includes a year and date and a deployment number to ensure uniqueness.
+
+The `--disable-rollback` option if useful during testing to keep the VMs around after something goes wrong. The VMs are usually useful in doing a post mortem of a failed deployment.  If `--disable-rollback` is not used, then a failure in the deployment triggers a rollback of everything that got deployed.
 
 ## Hostname mapping and Route53 DNS
 
@@ -48,7 +50,7 @@ This section documents the "tricks" that are used to get request traffic from a 
   - The address for this entry would be the public IP address of the master node ELB.
   - The public IP address of the master node ELB can be determined using `nslookup` on the master node ELB host name that is listed in the outputs of the root stack template.
 
-- A Route53 record is created by the CloudFormation template (the root template) that is an alias that maps the `ClusterCADomain` to the master node ELB public hostname.
+- A Route53 record is created by the CloudFormation template (the root template) that is an alias that maps the `ClusterDNSName` to the master node ELB public hostname.
 
 ## Sample command line invocations
 
@@ -60,8 +62,8 @@ The parameter JSON files are wired for S3 buckets that are accessible by IBM AWS
 
 S3 buckets have set up in `us-west-1`, `us-east-1` and `us-east-2` for the artifacts that are needed for the installation.
 
-As of 2018-1127:
+As of 2018-1221:
 
 ```
-aws cloudformation create-stack --template-body file://~/git/aws-icp-quickstart/cloudformation/0.9.5/00-ibm-cloud-private-root.yaml --parameters file://~/git/aws-icp-quickstart/cloudformation/parameters/0.9.5/icp310-parameters-us-east-1-3az-ha-pvsdeploy.json --capabilities CAPABILITY_IAM --stack-name pvsICPTestStack-2018-1126-02
+aws cloudformation create-stack --template-body file://~/git/aws-icp-quickstart/cloudformation/0.9.6/00-ibm-cloud-private-root.yaml --parameters file://~/git/aws-icp-quickstart/cloudformation/parameters/0.9.6/icp310-parameters-us-east-1-3az-ha-pvsdeploy.json --capabilities CAPABILITY_IAM --stack-name pvsICPTestStack-2018-1221-01 --disable-rollback
 ```

@@ -590,20 +590,20 @@ Resources:
       GroupDescription: >-
         Security group enabling access to the ICP Master node ports from any IP address.
       SecurityGroupIngress:
-        - Description: Management console (HTTPS)
+        - Description: Kubernetes API server
           IpProtocol: tcp
-          FromPort: 8443
-          ToPort: 8443
+          FromPort: 8001
+          ToPort: 8001
           CidrIp: !Ref ExternalICPAdminLocation
         - Description: Management console (HTTP)
           IpProtocol: tcp
           FromPort: 8080
           ToPort: 8080
           CidrIp: !Ref ExternalICPAdminLocation
-        - Description: Kubernetes API server
+        - Description: Management console (HTTPS)
           IpProtocol: tcp
-          FromPort: 8001
-          ToPort: 8001
+          FromPort: 8443
+          ToPort: 8443
           CidrIp: !Ref ExternalICPAdminLocation
         - Description: Image manager 8500
           IpProtocol: tcp
