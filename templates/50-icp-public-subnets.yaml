@@ -35,6 +35,8 @@ Parameters:
       Value for the owner tag for the deployed resource associated with the stack.
     Type: String
 
+  # RootStackName is used for the kubernetes key for the subnets.
+  # TBD - Do the subnets need a kubernetes key?  Need to investigate.
   RootStackName:
     Description: >-
       The name of the root stack.
@@ -77,8 +79,9 @@ Resources:
           Value: Public
         - Key: Owner
           Value: !Ref ResourceOwner
+          # TBD - Not sure kubernetes key is needed
         - Key: !Sub kubernetes.io/cluster/${RootStackName}
-          Value: ${RootStackName}
+          Value: !Sub ${RootStackName}
 
   PublicSubnetOneRouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -101,8 +104,9 @@ Resources:
           Value: Public
         - Key: Owner
           Value: !Ref ResourceOwner
+          # TBD - Not sure kubernetes key is needed
         - Key: !Sub kubernetes.io/cluster/${RootStackName}
-          Value: ${RootStackName}
+          Value: !Sub ${RootStackName}
 
   PublicSubnetTwoRouteTableAssociation:
     Condition: 3AZCondition
@@ -126,8 +130,9 @@ Resources:
           Value: Public
         - Key: Owner
           Value: !Ref ResourceOwner
+          # TBD - Not sure kubernetes key is needed
         - Key: !Sub kubernetes.io/cluster/${RootStackName}
-          Value: ${RootStackName}
+          Value: !Sub ${RootStackName}
 
   PublicSubnetThreeRouteTableAssociation:
     Condition: 3AZCondition

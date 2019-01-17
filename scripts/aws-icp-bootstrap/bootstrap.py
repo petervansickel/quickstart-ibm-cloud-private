@@ -2248,25 +2248,28 @@ class Bootstrap(object):
       Send a status signal to the "install completed" wait condition via the pre-signed URL
       provided to the stack.
       
-      NOTE: This works.  No 403 or other issue.
-      NOTE: We send a --success true regardless of the rc status from the installation process.
-            The actual status is provided in the --reason option of the signal.
-            We always send success so that the deployment does not roll back and the deployer
-            can do a post mortem, if there is a failure.
+      If the instance rc is 0, we send a --success true 
+      If the instance rc is non-zero we send a --success false
+      More detail on the status is provided in the --reason option of the signal.
+
+      NOTE: A failure signal (--success false) causes a rollback of the CloudFormation templates.
+      If the deployer does not use --disable-rollback, then the VMs are deleted and doing a post
+      mortem can be more difficult. 
     """
     methodName = 'signalWaitHandle'
     try:
       if (self.rc == 0):
+        success = 'true'
         status = 'SUCCESS'
       else:
-        status = 'FAILURE'
+        success = 'false'
+        status = 'FAILURE: Check boot node logs in S3 log bucket or on the boot node EC2 instance in /root/logs bootstrap.log and /opt/icp/%s/cluster/logs install.log.*' % self.ICPVersion
       #endIf
       data = "%s: IBM Cloud Private installation elapsed time: %d:%02d:%02d" % (status,eth,etm,ets)
       TR.info(methodName,"Signaling: %s with status: %s, data: %s" % (self.InstallationCompletedURL,status,data))
-      # Even when the installation fails, use --success true 
-      # to avoid deleting the stack and allow deployer to do a post mortem
+      # Deployer should use --disable-rollback to avoid deleting the stack on failures and allow a post mortem.
       check_call(['/usr/local/bin/cfn-signal', 
-                  '--success', 'true', 
+                  '--success', success, 
                   '--id', self.bootStackId, 
                   '--reason', status, 
                   '--data', data, 

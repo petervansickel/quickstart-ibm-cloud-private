@@ -20,8 +20,20 @@
     "ParameterValue": "m5.xlarge"
   },
   {
+    "ParameterKey": "ExternalApplicationLocation",
+    "ParameterValue": "108.39.143.97/32"
+  },
+  {
+    "ParameterKey": "ExternalICPAdminLocation",
+    "ParameterValue": "108.39.143.97/32"
+  },
+  {
     "ParameterKey": "ExternalSSHLocation",
-    "ParameterValue": "73.225.52.165/32"
+    "ParameterValue": "108.39.143.97/32"
+  },
+  {
+    "ParameterKey": "HostedZoneId",
+    "ParameterValue": "Z1TXQISDLGPKT8"
   },
   {
     "ParameterKey": "QSS3BucketName",
@@ -45,7 +57,7 @@
   },
   {
     "ParameterKey": "KeyFilePath",
-    "ParameterValue": "keys/additional-keys"
+    "ParameterValue": "keys/solution-engineering-keys"
   },
   {
     "ParameterKey": "KeyName",
@@ -94,6 +106,18 @@
   {
     "ParameterKey": "VPCName",
     "ParameterValue": "ICP311-VPC"
+  },
+  {
+    "ParameterKey": "VPCDomain",
+    "ParameterValue": "apic-demo.com"
+  },
+  {
+    "ParameterKey": "VPCSubdomainPrefix",
+    "ParameterValue": "icp"
+  },
+  {
+    "ParameterKey": "VulnerabilityAdvisorNodeCount",
+    "ParameterValue": "1"
   },
   {
     "ParameterKey": "WorkerNodeCount",
