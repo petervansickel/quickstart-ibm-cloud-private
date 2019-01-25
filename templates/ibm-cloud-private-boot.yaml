@@ -8,73 +8,7 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  This template deploys an ICP Boot node for orchestrating the deployment of an IBM Cloud Private stack. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
-Metadata:
-  AWS::CloudFormation::Interface:
-    ParameterGroups:
-      - Label:
-          default: General Deployment Parameters
-        Parameters:
-          - ResourceOwner
-          - KeyFilePath
-          - KeyName
-
-      - Label:
-          default: IBM Cloud Private Configuration Parameters
-        Parameters:
-          - ClusterName
-          - ClusterDomain
-          - ClusterCIDR
-          - ServiceCIDR
-
-      - Label:
-          default: Deployment Artifact Bucket Parameters
-        Parameters:
-          - CustomArtifactsPath
-          - ICPBootNodeScriptPackagePath
-          - ICPDeploymentLogsBucketName
-          - ICPScriptBucketName
-
-      - Label:
-          default: EC2 Instance Parameters
-        Parameters:
-          - BootNodeInstanceType
-
-      - Label:
-          default: Network Parameters
-        Parameters:
-          - ExternalSSHLocation
-
-    ParameterLabels:
-      # The parameter labels list is in aphabetical order
-      BootNodeInstanceType:
-        default: Boot Node EC2 Instance Type
-      ClusterCIDR:
-        default: ICP Cluster Network CIDR
-      ClusterDomain:
-        default: Cluster Domain
-      ClusterName:
-        default: Cluster Name
-      CustomArtifactsPath:
-        default: Custom Script Package Path
-      ExternalSSHLocation:
-        default: External SSH Location
-      ICPDeploymentLogsBucketName:
-        default: ICP Deployment Logs Bucket Name
-      ICPScriptBucketName:
-        default: ICP Script Bucket Name
-      ICPBootNodeScriptPackagePath:
-        default: ICP Boot Node Script Package Path
-      KeyFilePath:
-        default: Key File Path
-      KeyName:
-        default: EC2 Key Pair Name
-      ResourceOwner:
-        default: Resource Owner
-      RootStackName:
-        default: Root Stack Name
-      ServiceCIDR:
-        default: ICP Service Network CIDR
+  Boot node for orchestrating the deployment of an IBM Cloud Private cluster. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
 
 Parameters:
   # Variables are declared in alphabetical order.
@@ -185,7 +119,7 @@ Parameters:
 
   ICPS3KeyPrefix:
     Description: >-
-      The S3 key prefix (context root) for IBM Cloud Private installation artifacts in the ICPScriptBucketName S3 bucket.  (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
+      The S3 key prefix (context root) for IBM Cloud Private installation artifacts in the ICPScriptBucketName S3 bucket. By convention the value includes a trailing slash. (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
     Type: String
 
   ICPScriptBucketName:
@@ -375,20 +309,20 @@ Resources:
         ICPBootstrapScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${ScriptPackagePath}
+             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}${ScriptPackagePath}
              - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPBootNodeScriptPackagePath }
 
         CustomArtifacts:
           sources:
             /root: !Sub
-              - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${ArtifactsPath}
+              - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}${ArtifactsPath}
               - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ArtifactsPath: !Ref CustomArtifactsPath }
 
         KeyFile:
           files:
             /root/ssh_publickeys:
               source: !Sub
-                - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${KeyFilePath}
+                - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}${KeyFilePath}
                 - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, KeyFilePath: !Ref KeyFilePath }
               mode: '000554'
               owner: root

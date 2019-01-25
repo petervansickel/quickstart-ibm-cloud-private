@@ -8,68 +8,7 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  This template deploys the ICP Vulnerability Advisor node auto-scaling group. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
-Metadata:
-  AWS::CloudFormation::Interface:
-    ParameterGroups:
-      - Label:
-          default: General Deployment Parameters
-        Parameters:
-          - ResourceOwner
-          - KeyName
-
-      - Label:
-          default: Deployment Control Parameters
-        Parameters:
-          - UsePrivateRegistry
-
-      - Label:
-          default: Deployment Artifact Bucket Parameters
-        Parameters:
-          - ICPScriptBucketName
-          - ICPClusterNodeScriptPackagePath
-          - ICPDeploymentLogsBucketName
-
-      - Label:
-          default: EC2 Instance Parameters
-        Parameters:
-          - VulnerabilityNodeInstanceType
-
-      - Label:
-          default: IBM Cloud Private Cluster Parameters
-        Parameters:
-          - VulnerabilityAdvisorNodeCount
-
-      - Label:
-          default: Network Parameters
-        Parameters:
-          - InternalSSHSecurityGroup
-          - InternalICPSecurityGroup
-
-    ParameterLabels:
-      # The parameter labels are in aphabetical order
-      ICPClusterNodeScriptPackagePath:
-        default: ICP Cluster Node Script Package Path
-      ICPDeploymentLogsBucketName:
-        default: ICP Deployment Logs Bucket Name
-      ICPNodeRole:
-        default: ICP Node Role
-      ICPScriptBucketName:
-        default: ICP Script Bucket Name
-      InternalICPSecurityGroup:
-        default: Internal IBM Cloud Private Security Group
-      InternalSSHSecurityGroup:
-        default: Internal SSH Security Group
-      KeyName:
-        default: EC2 Key Pair Name
-      VulnerabilityAdvisorNodeInstanceType:
-        default: Vulnerability Advisor Node EC2 Instance Type
-      VulnerabilityAdvisorNodeCount:
-        default: Vulnerability Advisor Node Count
-      ResourceOwner:
-        default: Resource Owner
-      RootStackName:
-        default: Root Stack Name
+  Proxy node auto-scaling group. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
 
 Parameters:
   # Variables are declared in alphabetical order.
@@ -78,12 +17,20 @@ Parameters:
       The number of Availability Zones.
     Type: Number
 
-#  AvailabilityZones:
-#    Description: >-
-#      List of Availability Zones to use for the Vulnerability Advisor node auto-scaling group.
-    #Type: String
-#    Type: List<AWS::EC2::AvailabilityZone::Name>
+  ApplicationSecurityGroup:
+    Description: >-
+      ApplicationSecurityGroup resource ID from the parent stack
+    Type: String
 
+  ExternalSSHSecurityGroup:
+    Description: >-
+      The ExternalSSHSecurityGroup resource ID from the parent template. Used only for debugging when things fail very early in deployment and SSH access from the boot node has not been established.
+    Type: String
+
+  IBMCloudPrivateVPC:
+    Description: >-
+      The VPC resource ID for the IBMCloudPrivateVPC deployed by the root template.
+    Type: String
 
   ICPClusterNodeScriptPackagePath:
     Description: >-
@@ -108,7 +55,7 @@ Parameters:
 
   ICPS3KeyPrefix:
     Description: >-
-      The S3 key prefix (context root) for IBM Cloud Private installation artifacts in the ICPScriptBucketName S3 bucket.  (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
+      The S3 key prefix (context root) for IBM Cloud Private installation artifacts in the ICPScriptBucketName S3 bucket. By convention the value includes a trailing slash. (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
     Type: String
 
   ICPScriptBucketName:
@@ -137,29 +84,33 @@ Parameters:
     Type: AWS::EC2::KeyPair::KeyName
     ConstraintDescription: Must be the name of an existing EC2 KeyPair.
 
-  VulnerabilityAdvisorNodeCount:
-    Description: >-
-      Number of Vulnerability Advisor nodes to be deployed in the ICP cluster. Not typically deployed for a development environment. For production deployments, typically 3 are deployed. VA uses zookeeper which requires an odd number of instances for consistency voting purposes. The VA nodes run the resource image and container security scanning components.
-    Type: Number
-    AllowedValues:
-      - 0
-      - 1
-      - 3
-
-  VulnerabilityAdvisorNodeInstanceType:
-    Description: ICP Vulnerability Advisor node AWS EC2 instance type
-    Type: String
-    AllowedValues:
-      - m5.2xlarge
-      - m5.4xlarge
-      - m5d.2xlarge
-      - m5d.4xlarge
-    ConstraintDescription: Must be a valid EC2 instance type.
-
   PrivateSubnetIds:
     Description: >-
-      A comma delimted list of private subnet resource IDs passed in from the parent stack. The PrivateSubnetIds are used to configure the Vulnerability Advisor node auto-scaling group.
+      A comma delimted list of private subnet resource IDs passed in from the parent stack. The PrivateSubnetIds are used to configure the proxy node auto-scaling group.
     Type: String
+
+  PublicSubnetIds:
+    Description: >-
+      A comma delimted list of public subnet resource IDs passed in from the parent stack.  PublicSubnetIds are used to configure the Proxy Node Elastic Load Balancer (ELB).
+    Type: String
+
+  ProxyNodeCount:
+    Description: >-
+      Number of proxy nodes to be deployed in the ICP cluster. For a dev deployment 1 is sufficient. For production deployments, at least 2 and typically 3 are deployed.
+    Type: String
+    Default: 1
+
+  ProxyNodeInstanceType:
+    Description: ICP worker node AWS EC2 instance type
+    Type: String
+    AllowedValues:
+      - m5.large
+      - m5.xlarge
+      - m5.2xlarge
+      - m5d.large
+      - m5d.xlarge
+      - m5d.2xlarge
+    ConstraintDescription: Must be a valid EC2 instance type.
 
   ResourceOwner:
     Description: >-
@@ -204,7 +155,57 @@ Conditions:
 
 Resources:
 
-  VulnerabilityAdvisorNodeLaunchConfiguration:
+  ProxyNodeLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      Scheme: internet-facing
+      Type: network
+      Subnets: !Split [',', !Ref PublicSubnetIds]
+      Tags:
+          # Name tag is needed by the scripting to get config parameter
+          # value for the proxy_lb_address
+        - Key: Name
+          Value: ProxyNodeLoadBalancer
+        - Key: Owner
+          Value: !Ref ResourceOwner
+        - Key: !Sub kubernetes.io/cluster/${RootStackName}
+          Value: !Ref RootStackName
+
+  ProxyNode80TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 80
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  ProxyNode443TargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Port: 443
+      Protocol: TCP
+      VpcId: !Ref IBMCloudPrivateVPC
+
+  ProxyNodeLoadBalancer80Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ProxyNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ProxyNode80TargetGroup
+      Port: 80
+      Protocol: TCP
+
+  ProxyNodeLoadBalancer443Listener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      LoadBalancerArn: !Ref ProxyNodeLoadBalancer
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ProxyNode443TargetGroup
+      Port: 443
+      Protocol: TCP
+
+  ProxyNodeLaunchConfiguration:
     Type: AWS::AutoScaling::LaunchConfiguration
     Metadata:
       AWS::CloudFormation::Authentication:
@@ -226,7 +227,6 @@ Resources:
             apt:
               sysstat: []
               awscli: []
-              nfs-common: []
               socat: []
               inetutils-traceroute: []
               python-yaml: []
@@ -238,7 +238,7 @@ Resources:
         ICPNodeInitScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${ScriptPackagePath}
+             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}${ScriptPackagePath}
              - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
 
         StackPropertiesFile:
@@ -248,7 +248,7 @@ Resources:
                 REGION=${AWS::Region}
                 STACK_NAME=${RootStackName}
                 STACK_ID="${AWS::StackId}"
-                ROLE=va
+                ROLE=proxy
 
             /root/.aws/config:
               content: !Sub |
@@ -256,16 +256,36 @@ Resources:
                 region=${AWS::Region}
 
     Properties:
-      InstanceType: !Ref VulnerabilityAdvisorNodeInstanceType
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeType: io1
+            DeleteOnTermination: true
+            VolumeSize: 300
+            Iops: 8000
+
       IamInstanceProfile: !Ref ICPNodeProfile
-      KeyName: !Ref KeyName
+      InstanceType: !Ref ProxyNodeInstanceType
       ImageId: !FindInMap
           - AWSRegionAMIEC2
           - !Ref AWS::Region
           - Ubuntu16
+      KeyName: !Ref KeyName
 
-      # TBD - Is this needed.  These are on a private subnet.
+      # This is only needed when debugging nodeinit.py and the
+      # auto-scaling group is assigned to the public subnet
       #AssociatePublicIpAddress: true
+
+      SecurityGroups:
+        # All security groups reference the VPC (using the VpcId attribute)
+        # External access to the proxy public ports
+        - !Ref ApplicationSecurityGroup
+        # ICP traffic among cluster nodes
+        - !Ref InternalICPSecurityGroup
+        # SSH from boot node to cluster nodes
+        - !Ref InternalSSHSecurityGroup
+        # For debugging purposes only, we let in the ExternalSSHSecurity group
+        #- !Ref ExternalSSHSecurityGroup
 
       UserData:
         Fn::Base64:
@@ -277,7 +297,7 @@ Resources:
             # Upgrading pip leads to an error. Don't do, pip install --upgrade pip
             pip install https://s3.amazonaws.com/cloudformation-examples/aws-cfn-bootstrap-latest.tar.gz
             # Install the files and packages from the metadata
-            /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource VulnerabilityAdvisorNodeLaunchConfiguration --configsets ICPBootstrap --region ${AWS::Region}
+            /usr/local/bin/cfn-init -v --stack ${AWS::StackName} --resource ProxyNodeLaunchConfiguration --configsets ICPBootstrap --region ${AWS::Region}
             # pip install pyopenssl (so far, not needed on cluster nodes)
             pip install docker
             chmod +x /root/*.sh
@@ -285,27 +305,18 @@ Resources:
             cd /root
             /root/nodeinit.sh --os ubuntu
 
-      SecurityGroups:
-        # SSH from the boot node to cluster nodes
-        - !Ref InternalSSHSecurityGroup
-        # ICP traffic among cluster nodes
-        - !Ref InternalICPSecurityGroup
 
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeType: io1
-            DeleteOnTermination: true
-            VolumeSize: 500
-            Iops: 8000
-
-  VulnerabilityAdvisorNodeAutoScalingGroup:
+  ProxyNodeAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      LaunchConfigurationName: !Ref VulnerabilityAdvisorNodeLaunchConfiguration
-#      AvailabilityZones: !Split [',', !Ref AvailabilityZones]
+      LaunchConfigurationName: !Ref ProxyNodeLaunchConfiguration
       VPCZoneIdentifier: !Split [',', !Ref PrivateSubnetIds]
-      DesiredCapacity: !Ref VulnerabilityAdvisorNodeCount
+      # When we need to debug nodeinit.py, we put proxies on the public subnet
+      #VPCZoneIdentifier: !Split [',', !Ref PublicSubnetIds]
+      TargetGroupARNs:
+        - !Ref ProxyNode80TargetGroup
+        - !Ref ProxyNode443TargetGroup
+      DesiredCapacity: !Ref ProxyNodeCount
       MinSize: 1
       MaxSize: 3
       Tags:
@@ -313,7 +324,7 @@ Resources:
           Value: !Ref ResourceOwner
           PropagateAtLaunch: true
         - Key: ICPRole
-          Value: VA
+          Value: Proxy
           PropagateAtLaunch: true
         - Key: !Sub kubernetes.io/cluster/${RootStackName}
           Value: !Ref RootStackName
@@ -322,5 +333,15 @@ Resources:
 Outputs:
   StackId:
     Description: >-
-      The Vulnerability Advisor node stack resource ID.  Needed for introspection of the Vulnerability Advisor node stack to pull out the EC2 instance information.
+      The Proxy node stack resource ID.  Needed for introspection of the Proxy node stack to pull out the EC2 instance information.
     Value: !Ref AWS::StackId
+
+  ProxyNodeLoadBalancerDNSName:
+    Description: >-
+      The proxy node Elastic Load Balancer (ELB) DNS name (used in Route53 record set).
+    Value: !GetAtt ProxyNodeLoadBalancer.DNSName
+
+  ProxyNodeLoadBalancerHostedZoneID:
+    Description: >-
+      The proxy node Elastic Load Balancer (ELB) hosted zone ID (used in Route53 record set).
+    Value: !GetAtt ProxyNodeLoadBalancer.CanonicalHostedZoneID

@@ -12,7 +12,7 @@
 # NOTE: We are not using the EFS Mount Helper so the file system type is nfs4 (not efs).
 # The EFS Mount Helper is only available on Amazon Linux images.
 #
-# The options upt to nfsvers are bundled in the "defaults" option.
+# The options up to nfsvers are bundled in the "defaults" option.
 # We make them explicit to be clear exactly which options are in use.
 # The values of rsize,wsize,hard,timeo,retrans are likewise defaults that we choose to make explicit for clarity.
 # The EFS documentation highly recommends using those defaults.

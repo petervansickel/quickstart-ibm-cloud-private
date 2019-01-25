@@ -1,22 +1,12 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  This template deploys an IBM Cloud Private stack. This is the root template for a collection of nested stacks that make up the full ICP deployment. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
+  Root template for an IBM Cloud Private deployment. This is the root template for a collection of nested stacks that make up the full ICP deployment. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
 Metadata:
   AWS::CloudFormation::Interface:
     ParameterGroups:
       - Label:
-          default: General deployment parameters
-        Parameters:
-          - AdminUser
-          - AdminPassword
-          - KeyFilePath
-          - KeyName
-          - ResourceOwner
-          - VPCName
-
-      - Label:
-          default: Deployment control parameters
+          default: Deployment control configuration
         Parameters:
           - InceptionTimeout
           - InstallationTimeout
@@ -24,12 +14,15 @@ Metadata:
           - WhichProxyLBAddress
 
       - Label:
-          default: IBM Cloud Private configuration parameters
+          default: IBM Cloud Private configuration
         Parameters:
+          - AdminUser
+          - AdminPassword
           - ClusterName
           - ClusterDomain
           - ClusterCIDR
           - ExcludedMgmtServices
+          - ICPVersion
           - ServiceCIDR
 
       - Label:
@@ -42,16 +35,19 @@ Metadata:
           - ICPBootNodeScriptPackagePath
           - ICPClusterNodeScriptPackagePath
           - ICPDeploymentLogsBucketName
+          - KeyFilePath
           - QSS3BucketName
           - QSS3KeyPrefix
 
       - Label:
-          default: EC2 instance parameters
+          default: EC2 configuration
         Parameters:
           - BootNodeInstanceType
+          - KeyName
           - MasterNodeInstanceType
           - ManagementNodeInstanceType
           - ProxyNodeInstanceType
+          - ResourceOwner
           - VulnerabilityAdvisorNodeInstanceType
           - WorkerNodeInstanceType
 
@@ -79,6 +75,7 @@ Metadata:
           - PublicSubnets
           - VPCCIDR
           - VPCDomain
+          - VPCName
           - VPCSubdomainPrefix
           - AppSubdomainPrefix
 
@@ -90,9 +87,9 @@ Metadata:
     ParameterLabels:
       # Parameter labels in aphabetical order
       AdminPassword:
-        default: ICP super user password
+        default: IBM Cloud Private super user password
       AdminUser:
-        default: ICP super user name
+        default: IBM Cloud Private super user name
       ApplicationStorageMountPoint:
         default: Application storage mount point
       AppSubdomainPrefix:
@@ -120,21 +117,25 @@ Metadata:
       ExternalApplicationLocation:
         default: External application location
       ExternalICPAdminLocation:
-        default: External ICP admin location
+        default: External IBM Cloud Private admin location
       ExternalSSHLocation:
         default: External SSH location
       HostedZoneId:
         default: Hosted zone identifier
       ICPArchiveBucketRootName:
-        default: ICP archive bucket root name
+        default: IBM Cloud Private archive bucket root name
       ICPBootNodeScriptPackagePath:
-        default: ICP boot node script package path
+        default: IBM Cloud Private boot node script package path
       ICPClusterNodeScriptPackagePath:
-        default: ICP cluster node script package path
+        default: IBM Cloud Private cluster node script package path
       ICPDeploymentLogsBucketName:
-        default: ICP deployment logs bucket name
+        default: IBM Cloud Private deployment logs bucket name
+      ICPVersion:
+        default: IBM Cloud Private version
       InceptionTimeout:
         default: Inception timeout
+      InstallationTimeout:
+        default: Installation timeout
       KeyFilePath:
         default: Key file path
       KeyName:
@@ -153,6 +154,8 @@ Metadata:
         default: Private subnets
       PublicSubnetCIDR:
         default: Public subnet CIDR
+      PublicSubnets:
+        default: Public subnets
       ProxyNodeInstanceType:
         default: Proxy node EC2 instance type
       ProxyNodeCount:
@@ -165,6 +168,8 @@ Metadata:
         default: Resource owner
       ServiceCIDR:
         default: ICP service network CIDR
+      VPCCIDR:
+        default: Virtual private cloud CIDR
       VPCDomain:
         default: Virtual private cloud network domain
       VPCName:
@@ -186,15 +191,15 @@ Metadata:
 
 Parameters:
   # Variables are declared in alphabetical order.
-  #
   AdminPassword:
     Description: >-
-      IBM Cloud Private administrator (super user) password.
+      IBM Cloud Private cluster administrator (super user) password.
+    NoEcho: true
     Type: String
 
   AdminUser:
     Description: >-
-      IBM Cloud Private administrator (super user) name.
+      IBM Cloud Private cluster administrator (super user) name.
     Type: String
 
   ApplicationStorageMountPoint:
@@ -270,19 +275,19 @@ Parameters:
 
   ClusterPKIBucketName:
     Description: >-
-      The S3 bucket where the cluster PKI artifacts are located. If not provided, self-signed PKI artifacts will be created and used.
+      (Optional) The S3 bucket where the cluster PKI artifacts are located. If not provided, self-signed PKI artifacts will be created and used.
     Type: String
     Default: ''
 
   ClusterPKIRootPath:
     Description: >-
-      The path in the cluster PKI S3 bucket where the user defined PKI key and certificate files are found.  This is the key and certificate to be used for the master node identity.  The CN of the key and certificate must be the same value that is provided in combination of the ClusterName, VPCSubdomainPrefix (if provided) and the VPCDomain. The extensions on the root path are assumed to be .key and .crt to get the key and certificate files respectively. DO NOT provide a leading / on the path value. If not provided, self-signed PKI artifacts will be created and used.
+      (Optional) The path in the cluster PKI S3 bucket where the user defined PKI key and certificate files are found.  This is the key and certificate to be used for the master node identity.  The CN of the key and certificate must be the same value that is provided in combination of the ClusterName, VPCSubdomainPrefix (if provided) and the VPCDomain. The extensions on the root path are assumed to be .key and .crt to get the key and certificate files respectively. DO NOT provide a leading / on the path value. If not provided, self-signed PKI artifacts will be created and used.
     Type: String
     Default: ''
 
   CustomArtifactsPath:
     Description: >-
-      Path to zip archive in the ICP script bucket (QSS3BucketName) for an archive of additional artifacts, typically scripts, for ICP cluster administration extracted on the boot node in the root home directory. (Optional)
+      (Optional) Path to zip archive in the ICP script bucket (QSS3BucketName) for an archive of additional artifacts, typically scripts, for ICP cluster administration extracted on the boot node in the root home directory.
     Type: String
     Default: ''
 
@@ -328,7 +333,7 @@ Parameters:
 
   HostedZoneId:
     Description: >-
-      If an existing DNS hosted zone is to be used, then the hosted zone ID needs to be specified with this parameter.  Leave it empty if a DNS hosted zone is to be created as part of the deployment.
+      (Optional) If an existing DNS hosted zone is to be used, then the hosted zone ID needs to be specified with this parameter.  Leave it empty if a DNS hosted zone is to be created as part of the deployment.
     Type: String
     Default: ''
 
@@ -384,7 +389,7 @@ Parameters:
 
   KeyFilePath:
     Description: >-
-      Path to a file in the ICP script bucket (`QSS3BuckeName`) with public keys for administrators who need SSH access to the boot node. The public keys in the file in S3 at the KeyFilePath are copied to the `authorized_keys` file of the `ubuntu` user on the boot node. (Optional)
+      (Optional) Path to a file in the ICP script bucket (`QSS3BuckeName`) with public keys for administrators who need SSH access to the boot node. The public keys in the file in S3 at the KeyFilePath are copied to the `authorized_keys` file of the `ubuntu` user on the boot node.
     Type: String
     Default: ''
 
@@ -481,14 +486,15 @@ Parameters:
 
   QSS3KeyPrefix:
     Description: >-
-      The "context root" of the content for the ICP QuickStart.  By convention it is required that the value of the QSS3KeyPrefix is the name of the git repository associated with the IBM Cloud Private QuickStart artifacts.
+      The "context root" of the content for the ICP QuickStart.  By convention it is required that the value of the QSS3KeyPrefix is the name of the git repository associated with the IBM Cloud Private QuickStart artifacts. The value requires a trailing slash (/). The value represents an S3 folder which by convention includes a trailing slash (/) in its name.
     Type: String
-    Default: quickstart-ibm-cloud-private
+    Default: quickstart-ibm-cloud-private/
 
   ResourceOwner:
     Description: >-
-      Value for the owner tag for the deployed resources associated with the stack.
+      Value for the owner tag for the deployed resources associated with the stacks.
     Type: String
+    Default: ICP-Quickstart
 
   ServiceCIDR:
     Description: >-
@@ -526,7 +532,7 @@ Parameters:
 
   VPCSubdomainPrefix:
     Description: >-
-      If a subdomain is to be created as part of the deployment, then provide the subdomain prefix with this parameter.  Otherwise, the full domain is assumed to be provided as the value of the VPCDomain parameter. If a non-empty value is provided in the VPCSubdomainPrefix, a subdomain is created and the full domain used for the deployment is the VPCSubdomainPrefix combined with the VPCDomain.
+      (Optional) If a subdomain is to be created as part of the deployment, then provide the subdomain prefix with this parameter.  Otherwise, the full domain is assumed to be provided as the value of the VPCDomain parameter. If a non-empty value is provided in the VPCSubdomainPrefix, a subdomain is created and the full domain used for the deployment is the VPCSubdomainPrefix combined with the VPCDomain.
     Type: String
     Default: ''
 
@@ -729,7 +735,7 @@ Resources:
     DependsOn: InternetGatewayAttachment
     Properties:
       TemplateURL: !Sub
-        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/50-icp-public-subnets.yaml
+        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/icp-public-subnets.yaml
         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
@@ -748,7 +754,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/51-icp-private-subnets.yaml
+        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/icp-private-subnets.yaml
         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
@@ -764,7 +770,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/99-ibm-cloud-private-iam-security.yaml
+        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-iam-security.yaml
         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         ClusterPKIBucketName: !Ref ClusterPKIBucketName
@@ -784,7 +790,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/98-ibm-cloud-private-shared-storage.yaml
+        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-shared-storage.yaml
         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
@@ -801,7 +807,7 @@ Resources:
     # root stack Outputs.
     Properties:
       TemplateURL: !Sub
-        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/01-ibm-cloud-private-boot.yaml
+        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-boot.yaml
         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AdminPassword: !Ref AdminPassword
@@ -873,7 +879,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/02-ibm-cloud-private-master.yaml
+         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-master.yaml
          - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
@@ -903,7 +909,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/03-ibm-cloud-private-mgmt.yaml
+         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-mgmt.yaml
          - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
@@ -929,7 +935,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/04-ibm-cloud-private-va.yaml
+         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-va.yaml
          - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
@@ -954,7 +960,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/05-ibm-cloud-private-proxy.yaml
+         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-proxy.yaml
          - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         ApplicationSecurityGroup: !GetAtt IAMResources.Outputs.ApplicationSecurityGroup
@@ -984,7 +990,7 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}/templates/06-ibm-cloud-private-worker.yaml
+         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-worker.yaml
          - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
@@ -1036,10 +1042,10 @@ Outputs:
       - !Sub https://${ClusterName}.${VPCDomain}:8443/
       - !Sub https://${ClusterName}.${VPCSubdomainPrefix}.${VPCDomain}:8443/
 
-  ICPAdminUserAndPassword:
+  ICPAdminUser:
     Description: >-
-      The user name and password of the IBM Cloud Private cluster administrator (super user).
-    Value: !Sub ${AdminUser}/${AdminPassword}
+      The user name of the IBM Cloud Private cluster administrator (super user).
+    Value: !Sub ${AdminUser}
 
   EFSDNSName:
     Description: >-

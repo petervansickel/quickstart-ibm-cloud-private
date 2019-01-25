@@ -2,7 +2,7 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  This template defines the IAM resources used by the root template and all other stack templates used to deploy the IBM Cloud Private cluster.
+  IAM resources used by the root template and all other stack templates used to deploy the IBM Cloud Private cluster.
 
 Parameters:
 

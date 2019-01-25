@@ -9,7 +9,7 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  This template defines the EFS file system used for shared storage by the master nodes and worker nodes the IBM Cloud Private cluster.
+  EFS file system used for shared storage by the master nodes and worker nodes of the IBM Cloud Private cluster. **WARNING** You will be billed for the AWS resources used if you create a stack from this template.
 
 Parameters:
   AvailabilityZoneCount:

@@ -143,6 +143,8 @@ StackParameterNames = []
   the information captured in the intrinsic variable values.
 """
 IntrinsicVariableNames = [
+    "AWSAccessKeyId",
+    "AWSSecretKey",
     "BootNodePrivateIPv4Address",
     "BootNodePublicIPv4Address",
     "ClusterCertPath",
@@ -158,7 +160,8 @@ IntrinsicVariableNames = [
     "ICPVersion",
     "KubeCertPath",
     "KubeKeyPath",
-    "NATGatewayPublicIPv4Address"
+    "NATGatewayPublicIPv4Address",
+    "VPCId"
   ]
 
 IntrinsicVariables = {}
@@ -638,6 +641,10 @@ class Bootstrap(object):
     IntrinsicVariables['BootNodePrivateIPv4Address'] = self.getPrivateIPv4Address()
     IntrinsicVariables['BootNodePublicIPv4Address'] = self.getPublicIPv4Address()
     IntrinsicVariables['NATGatewayPublicIPv4Address'] = self.getNATGatewayIPv4Address()
+    
+    # AWSRegion and VPCId are used w
+    IntrinsicVariables['AWSRegion'] = self.region
+    IntrinsicVariables['VPCId'] = self.IBMCloudPrivateVPC
   #endDef
   
   

@@ -25,7 +25,7 @@
   },
   {
     "ParameterKey": "ExcludedMgmtServices",
-    "ParameterValue": "istio,custom-metrics-adapter"
+    "ParameterValue": "istio,vulnerability-advisor,custom-metrics-adapter"
   },
   {
     "ParameterKey": "ExternalApplicationLocation",
@@ -113,11 +113,11 @@
   },
   {
     "ParameterKey": "VPCSubdomainPrefix",
-    "ParameterValue": "icp"
+    "ParameterValue": "icp-use1"
   },
   {
     "ParameterKey": "VulnerabilityAdvisorNodeCount",
-    "ParameterValue": "1"
+    "ParameterValue": "0"
   },
   {
     "ParameterKey": "WorkerNodeCount",

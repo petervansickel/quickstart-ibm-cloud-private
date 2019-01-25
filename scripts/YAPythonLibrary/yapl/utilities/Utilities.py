@@ -291,7 +291,7 @@ def showFile(path):
       sys.stdout.flush()
       line = fileToShow.readline()
     #endWhile
-  except Exception, e:
+  except Exception as e:
     raise e
   #endTry
 #endDef

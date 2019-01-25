@@ -8,10 +8,7 @@ import os, fnmatch, yaml
 from subprocess import call
 
 from yapl.utilities.Trace import Trace, Level
-from yapl.exceptions.Exceptions import InvalidParameterException
 from yapl.exceptions.Exceptions import MissingArgumentException
-from yapl.exceptions.Exceptions import InvalidConfigurationFile
-from yapl.exceptions.ICPExceptions import CommandInterpreterException
 
 # Imports or command helpers
 from yapl.k8s.KubectlHelper import KubectlHelper
@@ -26,6 +23,8 @@ CommandHelpers = {
   "kubectl": KubectlHelper,
   "helm": HelmHelper
 }
+
+CommandNames = CommandHelpers.keys()
 
 class CommandHelper(object):
   """
@@ -50,8 +49,7 @@ class CommandHelper(object):
       
         restArgs may have values for custom variables that override the 
         custom variable values in the variables yaml
-        
-            
+         
     """
     methodName = '__init__'
     
@@ -70,18 +68,36 @@ class CommandHelper(object):
     
     self.home = os.path.expanduser('~')
       
-    # command path may have no variables (static command)
-    self.variableValues = {}
-    self.variableMap = {}
+    self.variableValues = self.initVariableValues(self.commandPath, **restArgs)
+    self.metadata = self.initMetaData(self.commandPath)
     
-    variablesFiles = self.getYaml(self.commandPath, include=['variables'])
+  #endDef
+  
+  
+  def initVariableValues(self, commandPath, **restArgs):
+    """
+      Return a dictionary of variable values for the given command path.
+      
+      The custom variables defined in a yaml file of kind variables are 
+      merged with the IntrinsicVariables.
+      
+      A given command path may not have any custom variables.
+      
+      A given command set may only use intrinsic variables.
+    """
+    methodName = "initVariableValues"
+    
+    customVariables = {}
+    
+    variablesFiles = self.getYaml(commandPath, include=['variables'])
+    
     if (not variablesFiles):
       if (TR.isLoggable(Level.FINEST)):
-        TR.finest(methodName,"No yaml found for kind variables; static command set use-case.")
+        TR.finest(methodName,"No yaml found for kind variables. Only intrinsic variables in use.")
       #endIf
     else:
       if (len(variablesFiles) > 1):
-        TR.warning(methodName, "Multiple variables files is currently not supported.  Only the first variables file will be used.")
+        TR.warning(methodName, "Multiple variables files are currently not supported.  Only the first variables file will be used.")
       #endIf
       
       # Only the first file of kind variables is processed      
@@ -93,47 +109,65 @@ class CommandHelper(object):
       with open(variablesPath, 'r') as variablesFile:
         variables = yaml.load(variablesFile)
       #endWith
-            
-      variableMap = variables.get('VariableKeywordMap')
-      if (not variableMap):
-        raise InvalidConfigurationFile("The file: %s, is expected to have a VariableKeywordMap attribute." % variablesPath )
-      #endIf
+                  
+      customVariables = variables.get('CustomVariables')
       
-      if (TR.isLoggable(Level.FINEST)):
-        TR.finest(methodName,"Variable Keyword Map: %s" % variableMap)
-      #endIf
-      
-      self.variableMap = variableMap
-      self.variableNames = variableMap.keys()
-      
-      # Custom VariableValues are optional, could be using only IntrinsicVariables.
-      variableValues = variables.get('VariableValues')
-      
-      if (variableValues):
+      if (customVariables):
         if (TR.isLoggable(Level.FINEST)):
-          TR.finest(methodName,"Custom Variable Values: %s" % variableValues)
+          TR.finest(methodName,"Custom Variables: %s" % customVariables)
         #endIf
       else:
         if (TR.isLoggable(Level.FINEST)):
-          TR.finest(methodName,"No custom variable values defined.")
+          TR.finest(methodName,"No custom variable values defined in %s." % variablesPath)
         #endIf
       #endIf
       
-      if (restArgs):
-        self.variableValues = self.mergeArgValues(self.variableNames, variableValues, **restArgs)
-      else:
-        self.variableValues = variableValues
+      if (customVariables and restArgs):
+        customVariables = self.mergeArgValues(customVariables, **restArgs)
       #endIf
-      
-      if (self.IntrinsicVariables):
-        self.variableValues = self.mergeArgValues(self.variableNames,self.variableValues,**self.IntrinsicVariables)
-      #endIf
-      
+    #endIf
+    
+    variableValues = self.mergeValues(customVariables,self.IntrinsicVariables)
+    
+    if (TR.isLoggable(Level.FINEST)):
+      TR.finest(methodName,"All Variable Values: %s" % variableValues)
+    #endIf
+    
+    return variableValues
+  #endDef
+  
+  
+  def initMetaData(self, commandPath):
+    """
+      Initialize the meta data for the given command path.
+    """
+    methodName = "initMetaData"
+
+    metadata = {}
+    
+    metaDataFiles = self.getYaml(commandPath, include=['metadata'])
+    
+    if (not metaDataFiles):
       if (TR.isLoggable(Level.FINEST)):
-        TR.finest(methodName,"All Variable Values: %s" % self.variableValues)
+        TR.finest(methodName,"No yaml found for kind metadata.")
+      #endIf
+    else:
+      if (len(metaDataFiles) > 1):
+        TR.warning(methodName, "Multiple metadata files are currently not supported.  Only the first metadata file will be used.")
       #endIf
       
-    #endIf      
+      # Only the first file of kind metadata is processed      
+      metaDataPath = metaDataFiles[0]
+      if (TR.isLoggable(Level.FINEST)):
+        TR.finest(methodName,"Using metadata defined in: %s" % metaDataPath)
+      #endIf
+         
+      with open(metaDataPath, 'r') as metaDataFile:
+        metadata = yaml.load(metaDataFile)
+      #endWith
+    #endIf
+    
+    return metadata
   #endDef
   
   
@@ -169,56 +203,116 @@ class CommandHelper(object):
   #endDef
 
   
-  def mergeArgValues(self, variableNames, variableValues, **restArgs):
+  def mergeArgValues(self, variableValues, **restArgs):
     """
       Return a reference to the variableValues dictionary with merged values for 
-      the variableNames from restArgs
+      the variables from restArgs
       
-      For each name in the variableNames list, check the restArgs to see if there
-      is a value to use to update a name-value pair variableValues dictionary.
+      For each variable in the variableValues dictionary, check the restArgs 
+      to see if there is a value to use to update a name-value pair variableValues 
+      dictionary.
+      
       The value of a given variable in restArgs takes precedence over the value
-      that is defined in the variables yaml.
+      that is defined in given variableValues.
       
     """
     methodName = 'mergeArgValues'
     
-    for name in variableNames:
-      value = restArgs.get(name)
-      if (value != None):
-        if (variableValues.get(name) != None):
+    if (variableValues and restArgs):
+      variableNames = variableValues.keys()
+      
+      for name in variableNames:
+        value = restArgs.get(name)
+        if (value != None):
           if (TR.isLoggable(Level.FINEST)):
             TR.finest(methodName,"Replacing value of %s: %s with: %s" % (name,variableValues[name],value))
           #endIf
           variableValues[name] = value
-        else:
-          # typically this would be adding a value for an intrinsic variable
-          if (TR.isLoggable(Level.FINEST)):
-            TR.finest(methodName,"Adding variable value: %s: %s" % (name,value))
-          #endIf
-          variableValues[name] = value
-      #endIf
-    #endFor
-        
+        #endIf
+      #endFor
+    #endIf
     return variableValues
   #endDef
 
 
+  def mergeValues(self, x, y):
+    """
+      Return a new dictionary that is composed of the values in x and y
+      where x and y are dictionaries.
+      
+      x and y may be None or an empty dictionary.  
+    """
+    if (x and y):
+      z = x.copy()
+      z.update(y)
+    elif (x and not y):
+      z = x.copy()
+    elif (not x and y):
+      z = y.copy()
+    else:
+      z = {}
+    #endIf
+    
+    return z
+    
+  #endDef
+  
+
+  def allIntrinsicsDefined(self):
+    """
+      Return True if all prerequisite intrinsic variables have a value.
+      Otherwise return false.
+    """
+    methodName = "allIntrinsicsDefined"
+    
+    result = True
+    intrinsics = self.metadata.get('required-intrinsics')
+    
+    empties = []
+    if (intrinsics):
+      for name in intrinsics:
+        value = self.variableValues.get(name)
+        if (value == None or value == "" or value == []):
+          empties.append(name)
+        #endIf
+      #endFor 
+    #endIf
+    
+    if (empties):
+      result = False
+      TR.info(methodName,"Intrinsic variables with an empty value: %s" % empties)
+    #endIf
+    
+    return result
+  #endDef
+  
+  
   def checkForMacros(self,line,parameterNames,keywordMap):
     """
-      Return a dictionary with one or more key-value pairs from the keywordMap that 
+      Return a dictionary with one or more key-value pairs from the parameterNames
       have a macro substitution present in the given line.
       
-      If parameterNames or keywordMap is empty (or None) then nothing to do and an
+      The parameterNames may have a mapping onto a keyword in the keywordMap in 
+      which case the macro substitution is using the keyword in place of the parameter
+      name.
+      
+      It may be that some parameter names are used directly and others have 
+      a keyword replacement.
+      
+      If parameterNames is empty (or None) then nothing to do and an
       empty result is returned.  A static command file would have no parameters.
         
-      Otherwise, return an empty dictionary. 
+      If no macro substitution is found, an empty dictionary is returned.
     """
     result = {}
-    if (parameterNames and keywordMap):
+    if (parameterNames):
       for parmName in parameterNames:
-        macroName = keywordMap.get(parmName)
+        macroName = None
+        if (keywordMap):
+          macroName = keywordMap.get(parmName)
+        #endIf
         if (not macroName):
-          raise InvalidParameterException("The parameter name: %s was not found in the given keyword mappings hash map: %s" % (parmName,keywordMap))
+          macroName = parmName
         #endIf
         macro = "${%s}" % macroName
         if (line.find(macro) >= 0):
@@ -277,10 +371,6 @@ class CommandHelper(object):
       if (TR.isLoggable(Level.FINEST)):
         TR.finest(methodName,"Keyword Map: %s" % keywordMap)
       #endIf
-    #endIf
-    
-    if (parameterNames and not keywordMap):
-      raise InvalidParameterException("A keyword map must be provided if there are substitution parameters")
     #endIf
     
     if (keywordMap and not parameterNames):
@@ -342,68 +432,124 @@ class CommandHelper(object):
     #endTry
   #endDef
 
+
+  def _createCommands(self, cmdTemplates):
+    """
+      Helper for createCommands()
+    """
+    methodName = "_createCommands"
+    
+    commands = []
+    
+    stagingDir = os.path.join(os.getcwd(),'staging')
+    # Command files get created in the staging directory.
+    if (not os.path.exists(stagingDir)):
+      os.mkdir(stagingDir)
+    #endIf
+    
+    if (len(cmdTemplates) > 1): cmdTemplates.sort()
+    
+    for template in cmdTemplates:
+      baseName = os.path.basename(template)
+      rootName,ext = os.path.splitext(baseName)
+      cmdFilePath = os.path.join(stagingDir,"%s-command%s" % (rootName,ext))
+      
+      self.createCommandFile(commandFilePath=cmdFilePath,
+                             templateFilePath=template,
+                             parameters=self.variableValues
+                            )
+      
+      with open(cmdFilePath, 'r') as cmdFile:
+        cmdDocs = list(yaml.load_all(cmdFile))
+      #endWith
+
+      
+      for i in range(0,len(cmdDocs)):
+        doc = cmdDocs[i]
+        
+        status = doc.get('status')
+        if (status and status == 'PROCESSED'): continue
+        
+        kind = doc.get('kind')
+        
+        if (kind not in CommandNames):
+          if (TR.isLoggable(Level.FINER)):
+            TR.finer(methodName,"Skipping document kind: %s" % kind)
+          #endIf
+        else:            
+          helperClass = CommandHelpers.get(kind)
+          if (TR.isLoggable(Level.FINEST)):
+            TR.finest(methodName,"For kind: %s, helper class: %s" % (kind,helperClass))
+          #endIf
+          
+          helper = helperClass()
+          
+          if (TR.isLoggable(Level.FINEST)):
+            TR.finest(methodName,"helper instance: %s" % helper)
+          #endIf
+          
+          cmds = helper.createCommands(cmdDocs,i,stagingDirPath=stagingDir) 
+          
+          if (TR.isLoggable(Level.FINEST)):
+            TR.finest(methodName, "Adding commands: %s" % cmds)  
+          #endIf
+                         
+          commands.extend(cmds)
+        #endIf
+      #endFor
+    #endFor
+      
+    return commands
+  #endDef
+  
   
   def createCommands(self,commandPath):
     """
       Return list of command dictionaries where each command dictionary has the command
       in the form of a list and a string.  Either the list or the string can be used 
-      with subprocess.call().  The command string is useful emitting trace.
+      with subprocess.call().  The command string is useful for emitting trace.
       
       Each command dictionary looks like:
       { cmdList: [ ... ], cmdString: "..." }
       
       A list of command dictionaries is returned as there may be more than one command
-      defined in the commandPath directory.  The ordering of the commands in the list is
-      the order of the template files in the commandPath directory.
+      defined in the commandPath directory.  More than one command may be defined in a
+      given command template file using multiple yaml documents in the template file.  
+      The ordering of the commands in the list is the order of the template files in the 
+      commandPath directory and the order of the commands within the command template file.
+      
+      A command template file may have multiple documents defined in the file.  Some of those
+      documents may be commands.  But those documents may define kubernetes objects as well.
+      The file may include yaml that defines an argument object to a command, e.g., a kubectl 
+      create command may use a document defined in the template file as a definition of the thing
+      to be created.  The documents in a template file that are not of a kind that is in the 
+      CommandNames list is assumed to be something that gets processed by a command defined in
+      that document and skipped.  (See the for loop in the method for details.)
       
       Each command is defined by the .yaml command template and the substitution of actual  
       values for the macro expressions in the templates.
       
       The commands are sorted based on a simple string sort of the file names in the commandPath.
+      
+      A Python trick is used to instantiate helper classes for each kind of supported command.
+      The helperClass variable gets assigned a class from the CommandHelpers.  Then the class
+      is instantiation is helperClass().
     """
     methodName = "createCommands"
     
     commands = []
     
-    cmdTemplates = self.getYaml(commandPath,exclude=['variables'])
-    if (not cmdTemplates):
-      TR.warning(methodName,"No command template files found in: %s" % commandPath)
-    else:
-      stagingDir = os.path.join(os.getcwd(),'staging')
-      # Command files get created in the staging directory.
-      if (not os.path.exists(stagingDir)):
-        os.mkdir(stagingDir)
+    if (self.metadata and not self.allIntrinsicsDefined()):
+      TR.info(methodName,"Not all prerequisite intrinsic variables defined. Ignoring this command set.")
+    else:    
+      cmdTemplates = self.getYaml(commandPath,exclude=['variables','metadata'])
+      if (not cmdTemplates):
+        TR.warning(methodName,"No command template files found in: %s" % commandPath)
+      else:
+        commands = self._createCommands(cmdTemplates)
       #endIf
-      
-      if (len(cmdTemplates) > 1): cmdTemplates.sort()
-      
-      for template in cmdTemplates:
-        baseName = os.path.basename(template)
-        rootName,ext = os.path.splitext(baseName)
-        cmdFilePath = os.path.join(stagingDir,"%s-command%s" % (rootName,ext))
-        
-        self.createCommandFile(commandFilePath=cmdFilePath,
-                              templateFilePath=template,
-                              parameters=self.variableValues,
-                              keywordMap=self.variableMap)
-        
-        with open(cmdFilePath, 'r') as cmdFile:
-          cmdDocs = list(yaml.load_all(cmdFile))
-        #endWith
-        
-        cmdDoc0  = cmdDocs[0]
-        cmdKind = cmdDoc0.get('kind')
-        
-        helperClass = CommandHelpers.get(cmdKind)
-        if (not helperClass):
-          raise CommandInterpreterException("CommandHelpers has no helper class for command kind: %s" % cmdKind)
-        #endIf
-        helper = helperClass()
-        cmd = helper.createCommand(cmdDocs,stagingDirPath=stagingDir)
-              
-        commands.append(cmd)
-      #endFor
-    #endIf    
+    #endIf
+       
     return commands
   #endDef
   
@@ -417,7 +563,7 @@ class CommandHelper(object):
     TR.entering(methodName)
     
     if (restArgs):
-      self.variableValues = self.mergeArgValues(self.variableNames, self.variableValues, **restArgs)
+      self.variableValues = self.mergeArgValues(self.variableValues, **restArgs)
       if (TR.isLoggable(Level.FINEST)):
         TR.finest(methodName,"Using variable values: %s" % self.variableValues)
       #endIf

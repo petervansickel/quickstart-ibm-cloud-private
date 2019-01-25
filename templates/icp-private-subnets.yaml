@@ -2,7 +2,7 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  This template defines the private subnets used by the IBM Cloud Private deploment. The number of subnets defined is based on the number of Availability Zones to be used.
+  Private subnets used by the IBM Cloud Private deploment. The number of subnets defined is based on the number of Availability Zones to be used.
 
 Parameters:
   AvailabilityZoneCount:

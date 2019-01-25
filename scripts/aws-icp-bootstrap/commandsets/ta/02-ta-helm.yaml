@@ -13,6 +13,7 @@ options:
 
 # there can be multiple --set value inputs
 set-values:
-  authentication.icp.edgeIp: ${CLUSTER_DNS_NAME}
+  authentication.icp.edgeIp: ${ClusterDNSName}
   authentication.icp.secretName: trans-adv-secret
-  couchdb.persistence.storageClassName: ${TA_STORAGE_CLASS}
+  couchdb.persistence.storageClassName: ${TA_StorageClass}
+...

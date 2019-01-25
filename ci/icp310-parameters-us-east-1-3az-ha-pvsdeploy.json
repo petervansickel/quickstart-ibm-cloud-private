@@ -25,7 +25,7 @@
   },
   {
     "ParameterKey": "ClusterName",
-    "ParameterValue": "pvscluster"
+    "ParameterValue": "mycluster"
   },
   {
     "ParameterKey": "ExternalApplicationLocation",
@@ -38,6 +38,10 @@
   {
     "ParameterKey": "ExternalSSHLocation",
     "ParameterValue": "108.39.143.97/32"
+  },
+  {
+    "ParameterKey": "HostedZoneId",
+    "ParameterValue": "Z1TXQISDLGPKT8"
   },
   {
     "ParameterKey": "ICPBootNodeScriptPackagePath",
@@ -101,11 +105,15 @@
   },
   {
     "ParameterKey": "VPCDomain",
-    "ParameterValue": "icp-test.com"
+    "ParameterValue": "apic-demo.com"
   },
   {
     "ParameterKey": "VPCName",
-    "ParameterValue": "ICP310-VPC"
+    "ParameterValue": "ICPTest-VPC"
+  },
+  {
+    "ParameterKey": "VPCSubdomainPrefix",
+    "ParameterValue": "icp-use1"
   },
   {
     "ParameterKey": "WorkerNodeCount",

@@ -8,68 +8,7 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  This template deploys the ICP Management node auto-scaling group. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
-Metadata:
-  AWS::CloudFormation::Interface:
-    ParameterGroups:
-      - Label:
-          default: General Deployment Parameters
-        Parameters:
-          - ResourceOwner
-          - KeyName
-
-      - Label:
-          default: Deployment Control Parameters
-        Parameters:
-          - UsePrivateRegistry
-
-      - Label:
-          default: Deployment Artifact Bucket Parameters
-        Parameters:
-          - ICPScriptBucketName
-          - ICPClusterNodeScriptPackagePath
-          - ICPDeploymentLogsBucketName
-
-      - Label:
-          default: EC2 Instance Parameters
-        Parameters:
-          - ManagementNodeInstanceType
-
-      - Label:
-          default: IBM Cloud Private Cluster Parameters
-        Parameters:
-          - ManagementNodeCount
-
-      - Label:
-          default: Network Parameters
-        Parameters:
-          - InternalSSHSecurityGroup
-          - InternalICPSecurityGroup
-
-    ParameterLabels:
-      # Some attempt has been made to keep this list in aphabetical order
-      ICPClusterNodeScriptPackagePath:
-        default: ICP Cluster Node Script Package Path
-      ICPDeploymentLogsBucketName:
-        default: ICP Deployment Logs Bucket Name
-      ICPNodeRole:
-        default: ICP Node Role
-      ICPScriptBucketName:
-        default: ICP Script Bucket Name
-      InternalICPSecurityGroup:
-        default: Internal IBM Cloud Private Security Group
-      InternalSSHSecurityGroup:
-        default: Internal SSH Security Group
-      KeyName:
-        default: EC2 Key Pair Name
-      ManagementNodeInstanceType:
-        default: Management Node EC2 Instance Type
-      ManagementNodeCount:
-        default: Management Node Count
-      ResourceOwner:
-        default: Resource Owner
-      RootStackName:
-        default: Root Stack Name
+  Management node auto-scaling group. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
 
 Parameters:
   # Variables are declared in alphabetical order.
@@ -77,12 +16,6 @@ Parameters:
     Description: >-
       The number of Availability Zones.
     Type: Number
-
-#  AvailabilityZones:
-#    Description: >-
-#      List of Availability Zones to use for the Management node auto-scaling group.
-    #Type: String
-#    Type: List<AWS::EC2::AvailabilityZone::Name>
 
   ICPClusterNodeScriptPackagePath:
     Description: >-
@@ -107,7 +40,7 @@ Parameters:
 
   ICPS3KeyPrefix:
     Description: >-
-      The S3 key prefix (context root) for IBM Cloud Private installation artifacts in the ICPScriptBucketName S3 bucket.  (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
+      The S3 key prefix (context root) for IBM Cloud Private installation artifacts in the ICPScriptBucketName S3 bucket. By convention the value includes a trailing slash. (The ICPScriptBucketName gets assigned the value of the QSS3BucketName.)
     Type: String
 
   ICPScriptBucketName:
@@ -233,7 +166,7 @@ Resources:
         ICPNodeInitScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}/${ScriptPackagePath}
+             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}${ScriptPackagePath}
              - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
 
         StackPropertiesFile:
