@@ -8,7 +8,7 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  Master node EC2 instances. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
+  Master node EC2 instances. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1p8m99ouo)
 
 Parameters:
   # Variables are declared in alphabetical order.

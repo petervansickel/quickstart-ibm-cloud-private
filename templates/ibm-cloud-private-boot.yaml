@@ -8,7 +8,7 @@
 ---
 AWSTemplateFormatVersion: 2010-09-09
 Description: >-
-  Boot node for orchestrating the deployment of an IBM Cloud Private cluster. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template.
+  Boot node for orchestrating the deployment of an IBM Cloud Private cluster. **WARNING** This template creates EC2 instances and related resources. You will be billed for the AWS resources used if you create a stack from this template. (qs-1p8m99oui)
 
 Parameters:
   # Variables are declared in alphabetical order.
