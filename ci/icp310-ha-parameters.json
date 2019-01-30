@@ -49,7 +49,7 @@
   },
   {
     "ParameterKey": "ICPDeploymentLogsBucketName",
-    "ParameterValue": "$[taskcat_getval_QSS3BucketName]"
+    "ParameterValue": "overridden"
   },
   {
     "ParameterKey": "KeyFilePath",
