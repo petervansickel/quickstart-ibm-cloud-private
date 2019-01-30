@@ -18,7 +18,6 @@ global:
     - us-west-1
     - us-west-2
   reporting: true
-  s3bucket: cftests
 tests:
   icp-ha:
     parameter_input: icp310-ha-parameters.json
