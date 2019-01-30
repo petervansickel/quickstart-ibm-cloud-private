@@ -38,5 +38,9 @@ tests:
       - sa-east-1
       - us-east-1
       - us-east-2
-      - us-west-1
       - us-west-2
+  icp-non-ha:
+    parameter_input: icp310-non-ha.json
+    template_file: ibm-cloud-private-root.yaml
+    regions:
+      - us-west-1
