@@ -104,10 +104,6 @@
     "ParameterValue": "$[taskcat_random-string].icp.example.com"
   },
   {
-    "ParameterKey": "HostedZoneId",
-    "ParameterValue": ""
-  },
-  {
     "ParameterKey": "VPCName",
     "ParameterValue": "ICP310-VPC"
   },
