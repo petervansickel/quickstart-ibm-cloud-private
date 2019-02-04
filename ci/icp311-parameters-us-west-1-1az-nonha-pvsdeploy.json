@@ -13,7 +13,7 @@
   },
   {
     "ParameterKey": "AvailabilityZones",
-    "ParameterValue": "us-east-1f"
+    "ParameterValue": "us-west-1b"
   },
   {
     "ParameterKey": "AppSubdomainPrefix",
@@ -22,10 +22,6 @@
   {
     "ParameterKey": "BootNodeInstanceType",
     "ParameterValue": "m5.xlarge"
-  },
-  {
-    "ParameterKey": "ExcludedMgmtServices",
-    "ParameterValue": "istio,vulnerability-advisor,custom-metrics-adapter"
   },
   {
     "ParameterKey": "ExternalApplicationLocation",
@@ -53,15 +49,19 @@
   },
   {
     "ParameterKey": "ICPDeploymentLogsBucketName",
-    "ParameterValue": "aws-icp-quickstart-logs-us-east-1"
+    "ParameterValue": "aws-icp-quickstart-logs-us-west-1"
+  },
+  {
+    "ParameterKey": "ICPVersion",
+    "ParameterValue": "3.1.1"
   },
   {
     "ParameterKey": "KeyFilePath",
-    "ParameterValue": "keys/solution-engineering-keys.txt"
+    "ParameterValue": "keys/solution-engineering-keys"
   },
   {
     "ParameterKey": "KeyName",
-    "ParameterValue": "pvs_key_us_east_1"
+    "ParameterValue": "pvs_key_us_west_1"
   },
   {
     "ParameterKey": "ManagementNodeCount",
@@ -97,7 +97,7 @@
   },
   {
     "ParameterKey": "QSS3BucketName",
-    "ParameterValue": "aws-icp-quickstart-us-east-1"
+    "ParameterValue": "aws-icp-quickstart-us-west-1"
   },
   {
     "ParameterKey": "ResourceOwner",
@@ -113,11 +113,7 @@
   },
   {
     "ParameterKey": "VPCSubdomainPrefix",
-    "ParameterValue": "icp-use1"
-  },
-  {
-    "ParameterKey": "VulnerabilityAdvisorNodeCount",
-    "ParameterValue": "0"
+    "ParameterValue": "icp-usw1"
   },
   {
     "ParameterKey": "WorkerNodeCount",

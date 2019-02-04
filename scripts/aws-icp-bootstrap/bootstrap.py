@@ -84,6 +84,14 @@ History:
   
   25-31 DEC 2018 - pvs Added SecurityHelper to configure certain security groups on the fly.
   Removed obsolete code having to do with HeavyHelmHelper and installables.
+  
+  23-24 JAN 2019 - pvs Refactoring of CommandHelper, HelmHelper, KubectlHelper to more robustly
+  support invoking commands based on a collection of yaml files that define a command set. 
+  Enhancements originally motivated by the command set needed to install AWS Service Broker.
+  
+  25 JAN 2019 - pvs Introduced "Scrubber" to scrub sensitive data from objects before they 
+  get written to a trace file.  Motivated by the need to keep AWS keys from being exposed
+  in trace log files.
 """
 
 from Crypto.PublicKey import RSA
@@ -98,6 +106,7 @@ import docker
 import yaml
 from botocore.exceptions import ClientError
 from yapl.utilities.Trace import Trace, Level
+import yapl.utilities.Scrubber as Scrubber
 import yapl.utilities.Utilities as Utilities
 from yapl.exceptions.Exceptions import ExitException
 from yapl.exceptions.Exceptions import MissingArgumentException
@@ -131,12 +140,25 @@ StackStatusSleepTime = 60
 ICPClusterRoles = [ 'master', 'worker', 'proxy', 'management', 'va', 'etcd' ]
 HelpFile = "bootstrap.txt"
 
+
 """
   The StackParameters are imported from the CloudFormation stack in the _init() 
   method below.
 """
 StackParameters = {}
 StackParameterNames = []
+
+
+"""
+  SensitiveParameters is a dictionary of parameters that are not to be displayed in a log file,
+  e.g. passwords, access keys, account IDs.  The dictionary holds the name of the parameter and
+  the replacement value, when writing the parameter to a file.
+"""
+SensitiveParameters = {
+    "AWSAccessKeyId": "********",
+    "AWSSecretKey": "********"
+  }
+
 
 """
   IntrinsicVariables are special variables made available to scripts that need 
@@ -562,7 +584,8 @@ class Bootstrap(object):
     StackParameterNames = StackParameters.keys()
     
     if (TR.isLoggable(Level.FINEST)):
-      TR.finest(methodName,"StackParameters: %s" % StackParameters)
+      cleaned = Scrubber.dreplace(StackParameters,SensitiveParameters)
+      TR.finest(methodName,"Scrubbed StackParameters: %s" % cleaned)
     #endIf
     
     # Some stack parameter variables are made available to other scripts via IntrinsicVariables.  
@@ -1480,10 +1503,13 @@ class Bootstrap(object):
       Which install images to use is driven by the ICP version.
       Which S3 bucket to use is driven by the AWS region of the deployment.
       
+      The S3 bucket name is defined as a stack parameter input ICPArchiveBucketName
+      to the boot node template.
+      
       The source of the information is icp-install-artifact-map.yaml packaged with the
-      boostrap script package.  The yaml file holds the specifics regarding which bucket
-      to use and the S3 path for the ICP and Docker images as well as the Docker image
-      name and the inception commands to use for the installation.          
+      boostrap script package.  The yaml file holds the specifics the S3 path for the 
+      ICP and Docker images as well as the Docker image name and the inception commands 
+      to use for the installation.          
     """
     methodName = "loadInstallMap"
     
@@ -1509,21 +1535,10 @@ class Bootstrap(object):
     if (not installMap):
       raise ICPInstallationException("No ICP or Docker installation images defined for ICP version: %s" % version)
     #endIf
-    
-    buckets = installDoc.get('s3-buckets')
-    
-    if (TR.isLoggable(Level.FINEST)):
-      TR.finest(methodName,"S3 installation image buckets: %s" % buckets)
-    #endIf
-    
-    regionBucket = buckets.get(region)
-    if (not regionBucket):
-      raise ICPInstallationException("No S3 bucket for installation images defined for region: %s" % region)
-    #endIf
-    
+        
     # The version is needed to get to the proper folder in the region bucket.
     installMap['version'] = version
-    installMap['s3bucket'] = regionBucket
+    installMap['s3bucket'] = self.ICPArchiveBucketName
     
     return installMap
     
@@ -1809,14 +1824,15 @@ class Bootstrap(object):
   
   def createConfigFile(self):
     """
-      Create a configuration file from a template and based on stack parameter values.
+      Create a configuration file from a template combined with stack parameter values.
     """
     methodName="createConfigFile"
     
     configureICP = ConfigureICP(stackIds=self.stackIds, 
                                 configTemplatePath=self.configTemplatePath,
                                 stackParameters=StackParameters,
-                                etcHostsPlaybookPath=self.etcHostsPlaybookPath)
+                                etcHostsPlaybookPath=self.etcHostsPlaybookPath,
+                                sensitiveParameters=SensitiveParameters)
     
     TR.info(methodName,"STARTED creating config.yaml file.")
     configureICP.createConfigFile(os.path.join(self.home,"config.yaml"),self.ICPVersion)
@@ -1894,11 +1910,11 @@ class Bootstrap(object):
       raise ICPInstallationException("ERROR invoking: 'docker run -v %s:/data -e LICENSE=accept %s cp -r cluster /data' - Exception: %s" % (self.icpHome,dockerImage,e))
     #endTry
     
-    # NOTE: The just run docker command creates the cluster directory in icpHome
+    # NOTE: The above docker command created the cluster directory in icpHome
     os.mkdir("%s/cluster/images" % self.icpHome)
     shutil.move("/tmp/icp-install-archive.tgz","%s/cluster/images/%s" % (self.icpHome,imageTarBallName))
     shutil.copyfile("/root/hosts", "%s/cluster/hosts" % self.icpHome)
-    shutil.copyfile("/root/config.yaml", "%s/cluster/config.yaml" % self.icpHome)
+    shutil.move("/root/config.yaml", "%s/cluster/config.yaml" % self.icpHome)
     shutil.copyfile("/root/.ssh/id_rsa", "%s/cluster/ssh_key" % self.icpHome)
     
     self.configurePKI()
@@ -2348,7 +2364,7 @@ class Bootstrap(object):
         csPath = os.path.join(commandSetsPath,commandSet)
         try:
           TR.info(methodName,"STARTED executing command set at: %s" % csPath)
-          cmdHelper = CommandHelper(csPath,intrinsicVariables=IntrinsicVariables)
+          cmdHelper = CommandHelper(csPath,intrinsicVariables=IntrinsicVariables,sensitiveVariables=SensitiveParameters)
           cmdHelper.invokeCommands()
           TR.info(methodName,"COMPLETED executing command set at: %s" % csPath)
         except Exception, e:
@@ -2444,6 +2460,7 @@ class Bootstrap(object):
       # (PVS 31-DEC-2018:
       # _disabeSourceDestCheck(I) hasn't been used for over a month with many deployments
       # and no obvious ill-effects.  At this point, pretty sure it is not necessary.
+      # PVS 25-JAN-2019: Haven't seen any problems. Disabling source/dest check is not needed.
       #self._disableSourceDestCheck()    
      
       self.installMap = self.loadInstallMap(version=self.ICPVersion, region=self.region)

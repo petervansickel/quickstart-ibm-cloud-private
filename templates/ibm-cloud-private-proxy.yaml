@@ -12,6 +12,11 @@ Description: >-
 
 Parameters:
   # Variables are declared in alphabetical order.
+  AMIImageId:
+    Description: >-
+      The AMI virutal machine image identifier.  Root template defines the mapping by region.
+    Type: String
+
   AvailabilityZoneCount:
     Description: >-
       The number of Availability Zones.
@@ -22,6 +27,11 @@ Parameters:
       ApplicationSecurityGroup resource ID from the parent stack
     Type: String
 
+  EBSVolumeType:
+    Description: >-
+      The type of EBS volume to use for the cluster member EC2 instances. The io1 volume type supports the specification of the disk IOPS.  The gp2 volume type is less expensive and may perform well enough for your purposes. The StorageIOPS parameter specifies the IOPS of an io2 storage device.
+    Type: String
+
   ExternalSSHSecurityGroup:
     Description: >-
       The ExternalSSHSecurityGroup resource ID from the parent template. Used only for debugging when things fail very early in deployment and SSH access from the boot node has not been established.
@@ -30,6 +40,11 @@ Parameters:
   IBMCloudPrivateVPC:
     Description: >-
       The VPC resource ID for the IBMCloudPrivateVPC deployed by the root template.
+    Type: String
+
+  ICPArchiveBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP install archive and Docker install binary is located.  The bucket name is needed to establish permission to access the ICP and Docker installation archives. Root template uses a mapping based on AWS region to provide the archive bucket name.
     Type: String
 
   ICPClusterNodeScriptPackagePath:
@@ -122,36 +137,16 @@ Parameters:
       The root stack name. The root stack name is used as the common unique name for the Kubernetes tag on all EC2 instances in the cluster.
     Type: String
 
-Mappings:
-  # See https://cloud-images.ubuntu.com/locator/ec2/
-  # Builds needed that support HVM, Elastic Network Adapter (ENA)
-  # in order to use the MD5 instance types.
-  # Use EBS backed storage as opposed "instance-store", e.g., hvm:ebs-ssd
-  # TODO - Update EU an AP
-  AWSRegionAMIEC2:
-    us-east-1:
-      Ubuntu16: ami-ef151d90
-    us-east-2:
-      Ubuntu16: ami-dad5efbf
-    us-west-1:
-      Ubuntu16: ami-d8b05cbb
-    us-west-2:
-      Ubuntu16: ami-1cc69e64
-    eu-west-1:
-      Ubuntu16: ami-844e0bf7
-    eu-central-1:
-      Ubuntu16: ami-a9a557c6
-    ap-northeast-1:
-      Ubuntu16: ami-032f516e93380b8e6
-    ap-northeast-2:
-      Ubuntu16: ami-0eee4dcc71fced4cf
-    ap-southeast-1:
-      Ubuntu16: ami-d554f1b6
-    ap-southeast-2:
-      Ubuntu16: ami-0bc1f168
+  StorageIOPS:
+    Description: >-
+      The maximum number of read and write operations per second for the EBS storage devices provisioned to the IBM Cloud Private cluster member EC2 instances. The io1 storage volume type supports an explicit setting of the IOPS of the device. The EBSVolumeType parameter specifies the storage volume type. This parameter is ignored if the EBSVolumeType is set to gp2.
+    Type: Number
+
 
 Conditions:
   3AZCondition: !Equals [!Ref AvailabilityZoneCount, 3]
+  GPStorage: !Equals [!Ref EBSVolumeType, gp2]
+
 
 Resources:
 
@@ -259,17 +254,14 @@ Resources:
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
           Ebs:
-            VolumeType: io1
+            VolumeType: !Ref EBSVolumeType
             DeleteOnTermination: true
             VolumeSize: 300
-            Iops: 8000
+            Iops: !If [GPStorage, !Ref "AWS::NoValue", !Ref StorageIOPS]
 
       IamInstanceProfile: !Ref ICPNodeProfile
       InstanceType: !Ref ProxyNodeInstanceType
-      ImageId: !FindInMap
-          - AWSRegionAMIEC2
-          - !Ref AWS::Region
-          - Ubuntu16
+      ImageId: !Ref AMIImageId
       KeyName: !Ref KeyName
 
       # This is only needed when debugging nodeinit.py and the

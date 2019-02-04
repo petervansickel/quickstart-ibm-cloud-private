@@ -571,20 +571,9 @@ class NodeInit(object):
       raise ICPInstallationException("No ICP or Docker installation images defined for ICP version: %s" % version)
     #endIf
     
-    buckets = installDoc.get('s3-buckets')
-    
-    if (TR.isLoggable(Level.FINEST)):
-      TR.finest(methodName,"S3 installation image buckets: %s" % buckets)
-    #endIf
-    
-    regionBucket = buckets.get(region)
-    if (not regionBucket):
-      raise ICPInstallationException("No S3 bucket for installation images defined for region: %s" % region)
-    #endIf
-  
-      # The version is needed to get to the proper folder in the region bucket.
+    # The version is needed to get to the proper folder in the region bucket.
     installMap['version'] = version  
-    installMap['s3bucket'] = regionBucket
+    installMap['s3bucket'] = self.ICPArchiveBucketName
     
     return installMap
     

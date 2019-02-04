@@ -16,16 +16,8 @@
     "ParameterValue": "us-east-1f"
   },
   {
-    "ParameterKey": "AppSubdomainPrefix",
-    "ParameterValue": "apps"
-  },
-  {
     "ParameterKey": "BootNodeInstanceType",
     "ParameterValue": "m5.xlarge"
-  },
-  {
-    "ParameterKey": "ExcludedMgmtServices",
-    "ParameterValue": "istio,vulnerability-advisor,custom-metrics-adapter"
   },
   {
     "ParameterKey": "ExternalApplicationLocation",
@@ -56,8 +48,12 @@
     "ParameterValue": "aws-icp-quickstart-logs-us-east-1"
   },
   {
+    "ParameterKey": "ICPVersion",
+    "ParameterValue": "3.1.1"
+  },
+  {
     "ParameterKey": "KeyFilePath",
-    "ParameterValue": "keys/solution-engineering-keys.txt"
+    "ParameterValue": "keys/solution-engineering-keys"
   },
   {
     "ParameterKey": "KeyName",
@@ -105,7 +101,7 @@
   },
   {
     "ParameterKey": "VPCName",
-    "ParameterValue": "ICPTest-VPC"
+    "ParameterValue": "ICP311-VPC"
   },
   {
     "ParameterKey": "VPCDomain",
@@ -113,11 +109,7 @@
   },
   {
     "ParameterKey": "VPCSubdomainPrefix",
-    "ParameterValue": "icp-use1"
-  },
-  {
-    "ParameterKey": "VulnerabilityAdvisorNodeCount",
-    "ParameterValue": "0"
+    "ParameterValue": "icp"
   },
   {
     "ParameterKey": "WorkerNodeCount",

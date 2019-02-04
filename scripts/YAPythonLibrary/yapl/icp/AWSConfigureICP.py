@@ -8,6 +8,7 @@ from subprocess import call
 import socket
 import boto3
 from yapl.utilities.Trace import Trace, Level
+import yapl.utilities.Scrubber as Scrubber
 from yapl.exceptions.Exceptions import MissingArgumentException
 from yapl.exceptions.Exceptions import InvalidParameterException
 from yapl.exceptions.AWSExceptions import AWSStackResourceException
@@ -118,6 +119,8 @@ class ConfigureICP(object):
     Class that supports the manipulation of a config.yaml template file that
     gets used to drive the installation of IBM Cloud Private (ICP).
   """
+  
+  SensitiveParameters = {}
 
   def __init__(self, stackIds=None, configTemplatePath=None, **restArgs):
     """
@@ -211,6 +214,8 @@ class ConfigureICP(object):
 
     self.etcHostsPlaybookPath = restArgs.get('etcHostsPlaybookPath')
     
+    self.SensitiveParameters = restArgs.get('sensitiveParameters')
+    
     StackParameters = restArgs.get('stackParameters')
     if (not StackParameters):
       raise MissingArgumentException("The stack parameters must be provided.")
@@ -220,7 +225,8 @@ class ConfigureICP(object):
     
     configParms = self.getConfigParameters(StackParameters)
     if (TR.isLoggable(Level.FINEST)):
-      TR.finest(methodName,"Parameters defined in the stack:\n\t%s" % configParms)
+      cleaned = Scrubber.dreplace(configParms, self.SensitiveParameters)
+      TR.finest(methodName,"Scrubbed parameters defined in the stack:\n\t%s" % cleaned)
     #endIf
     
     self.configParameters = self.fillInDefaultValues(**configParms)
@@ -282,7 +288,8 @@ class ConfigureICP(object):
     self.configParameterNames = self.configParameters.keys()    
 
     if (TR.isLoggable(Level.FINEST)):
-      TR.finest(methodName,"All configuration parameters, including defaults:\n\t%s" % self.configParameters)
+      cleaned = Scrubber.dreplace(self.configParameters,self.SensitiveParameters)
+      TR.finest(methodName,"All configuration parameters, including defaults:\n\t%s" % cleaned)
     #endIf
 
   #endDef
@@ -1042,6 +1049,7 @@ class ConfigureICP(object):
       raise
     #endTry    
   #endDef
+
 
   def configureEtcHosts(self):
     """

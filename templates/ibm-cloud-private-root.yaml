@@ -71,6 +71,8 @@ Metadata:
           - ResourceOwner
           - VulnerabilityAdvisorNodeInstanceType
           - WorkerNodeInstanceType
+          - EBSVolumeType
+          - StorageIOPS
 
       - Label:
           default: Application workload configuration
@@ -81,7 +83,6 @@ Metadata:
           default: (Optional) Advanced deployment configuration
         Parameters:
           - CustomArtifactsPath
-          - ICPArchiveBucketRootName
           - ICPBootNodeScriptPackagePath
           - ICPClusterNodeScriptPackagePath
           - KeyFilePath
@@ -91,7 +92,6 @@ Metadata:
         Parameters:
           - QSS3BucketName
           - QSS3KeyPrefix
-
 
     ParameterLabels:
       # Parameter labels in aphabetical order
@@ -121,6 +121,8 @@ Metadata:
         default: Cluster PKI root path
       CustomArtifactsPath:
         default: Custom artifacts path
+      EBSVolumeType:
+        default: Elastic Block Storage volume type
       ExcludedMgmtServices:
         default: Excluded management services
       ExternalApplicationLocation:
@@ -131,8 +133,6 @@ Metadata:
         default: External SSH location
       HostedZoneId:
         default: Hosted zone identifier
-      ICPArchiveBucketRootName:
-        default: IBM Cloud Private archive bucket root name
       ICPBootNodeScriptPackagePath:
         default: IBM Cloud Private boot node script package path
       ICPClusterNodeScriptPackagePath:
@@ -177,6 +177,8 @@ Metadata:
         default: Resource owner
       ServiceCIDR:
         default: ICP service network CIDR
+      StorageIOPS:
+        default: Storage Input/Output operations per second
       VPCCIDR:
         default: Virtual private cloud CIDR
       VPCDomain:
@@ -295,6 +297,15 @@ Parameters:
     Type: String
     Default: ''
 
+  EBSVolumeType:
+    Description: >-
+      The type of EBS volume to use for the cluster member EC2 instances. The gp2 volume type is less expensive and performs reasonably well. The io1 volume type supports the specification of the disk IOPS.  For high performance requirements use io2 with 8000 or more IOPS. See the StorageIOPS parameter to specify the IOPS of an io2 storage device.
+    Type: String
+    Default: gp2
+    AllowedValues:
+      - io1
+      - gp2
+
   ExcludedMgmtServices:
     Description: >-
       Comma separated list of management services to be excluded from the IBM Cloud Private deployment.  Services that may be excluded are: service-catalog, metering, monitoring, istio, vulnerability-advisor, custom-metrics-adapter.  Do not include vulnerability-advisor in this list if you choose to deploy Vulnerability Advisor.
@@ -340,12 +351,6 @@ Parameters:
       (Optional) If an existing DNS hosted zone is to be used, then the hosted zone ID needs to be specified with this parameter.  Leave it empty if a DNS hosted zone is to be created as part of the deployment.
     Type: String
     Default: ''
-
-  ICPArchiveBucketRootName:
-    Description: >-
-      The root name of the S3 bucket where the ICP and Docker installation artifacts are located.  For the QuickStart this gets a default (required) value of "ibm-cloud-private". The root name is used to form a full name that includes a dash (-), followed by the region name, e.g., ibm-cloud-private-us-east-1.  A bucket in each region is needed for efficiency of downloading the ICP installation artifacts to the deployed EC2 instances. The bucket name is needed to establish permission to access the ICP and Docker installation artifacts. For the QuickStart the buckets have already been created in each AWS region and populated with the appropriate installation artifacts.
-    Type: String
-    Default: ibm-cloud-private
 
   ICPBootNodeScriptPackagePath:
     Description: >-
@@ -410,7 +415,7 @@ Parameters:
     Default: 1
 
   ManagementNodeInstanceType:
-    Description: ICP management node AWS EC2 instance type.
+    Description: ICP Management node AWS EC2 instance type.
     Type: String
     Default: m5.2xlarge
     AllowedValues:
@@ -430,7 +435,7 @@ Parameters:
     Default: 1
 
   MasterNodeInstanceType:
-    Description: ICP master node AWS EC2 instance type.
+    Description: ICP Master node AWS EC2 instance type.
     Type: String
     Default: m5.2xlarge
     AllowedValues:
@@ -496,6 +501,7 @@ Parameters:
       copy all of the assets and submodules into it, if you want to override the
       Quick Start behavior for your specific implementation.
     Type: String
+
   QSS3KeyPrefix:
     AllowedPattern: '^[0-9a-zA-Z-/]*$'
     ConstraintDescription: >-
@@ -525,6 +531,12 @@ Parameters:
       ((\d{1,3})\.){3}\d{1,3}/\d{1,2}
     ConstraintDescription: >-
       Must be a valid IP CIDR range of the form x.x.x.x/x.
+
+  StorageIOPS:
+    Description: >-
+      The maximum number of read and write operations per second for the EBS storage devices provisioned to the IBM Cloud Private cluster member EC2 instances. The io1 storage volume type supports an explicit setting of the IOPS of the device. See the EBSVolumeType parameter to specify the storage volume type. This parameter is ignored if the EBSVolumeType is set to gp2.
+    Type: Number
+    Default: 8000
 
   VPCCIDR:
     Description: >-
@@ -565,7 +577,7 @@ Parameters:
     Default: 0
 
   VulnerabilityAdvisorNodeInstanceType:
-    Description: ICP vulnerability advisor node AWS EC2 instance type.
+    Description: ICP Vulnerability Advisor node AWS EC2 instance type.
     Type: String
     Default: m5.2xlarge
     AllowedValues:
@@ -616,6 +628,84 @@ Parameters:
       - m5d.4xlarge
     ConstraintDescription: Must be a valid EC2 instance type.
 
+Mappings:
+  # See https://cloud-images.ubuntu.com/locator/ec2/
+  # Builds needed that support HVM, Elastic Network Adapter (ENA)
+  # in order to use the MD5 instance types.
+  # Use EBS backed storage as opposed to "instance-store", e.g., hvm:ebs-ssd
+  # As of 20 JAN 2019 all Ubuntu images are release: 20190122.1
+  AWSRegionAMIEC2:
+    ap-northeast-1:
+      Ubuntu16: ami-04afce36be5236d87
+    ap-northeast-2:
+      Ubuntu16: ami-07293f39d3a08de15
+    ap-northeast-3:
+      Ubuntu16: ami-0188b2d037ee29ff6
+    ap-south-1:
+      Ubuntu16: ami-00fce1780262edd51
+    ap-southeast-1:
+      Ubuntu16: ami-07c1483ef8c3dfece
+    ap-southeast-2:
+      Ubuntu16: ami-04382b669b79925fb
+    ca-central-1:
+      Ubuntu16: ami-01dc5f3365131b133
+    eu-central-1:
+      Ubuntu16: ami-0602105b1a2ed9449
+    eu-north-1:
+      Ubuntu16: ami-13d75e6d
+    eu-west-1:
+      Ubuntu16: ami-00182431c78dff2fa
+    eu-west-2:
+      Ubuntu16: ami-095ed825090131933
+    eu-west-3:
+      Ubuntu16: ami-0edefbe5e8f36e2fe
+    sa-east-1:
+      Ubuntu16: ami-00514f4d33197006b
+    us-east-1:
+      Ubuntu16: ami-09677e0a6b14905b0
+    us-east-2:
+      Ubuntu16: ami-0e2a10a0edd037f7e
+    us-west-1:
+      Ubuntu16: ami-0c67212f0e9b7b73b
+    us-west-2:
+      Ubuntu16: ami-042b1570ee0c84f5a
+
+  AWSRegionS3Bucket:
+    ap-northeast-1:
+      ArchiveBucket: ibm-cloud-private-ap-northeast-1
+    ap-northeast-2:
+      ArchiveBucket: ibm-cloud-private-ap-northeast-2
+    ap-northeast-3:
+      ArchiveBucket: ibm-cloud-private-ap-northeast-3
+    ap-south-1:
+      ArchiveBucket: ibm-cloud-private-ap-south-1
+    ap-southeast-1:
+      ArchiveBucket: ibm-cloud-private-ap-southeast-1
+    ap-southeast-2:
+      ArchiveBucket: ibm-cloud-private-ap-southeast-2
+    ca-central-1:
+      ArchiveBucket: ibm-cloud-private-ca-central-1
+    eu-central-1:
+      ArchiveBucket: ibm-cloud-private-eu-central-1
+    eu-north-1:
+      ArchiveBucket: ibm-cloud-private-eu-north-1
+    eu-west-1:
+      ArchiveBucket: ibm-cloud-private-eu-west-1
+    eu-west-2:
+      ArchiveBucket: ibm-cloud-private-eu-west-2
+    eu-west-3:
+      ArchiveBucket: ibm-cloud-private-eu-west-3
+    sa-east-1:
+      ArchiveBucket: ibm-cloud-private-sa-east-1
+    us-east-1:
+      ArchiveBucket: ibm-cloud-private-us-east-1
+    us-east-2:
+      ArchiveBucket: ibm-cloud-private-us-east-2
+    us-west-1:
+      ArchiveBucket: ibm-cloud-private-us-west-1
+    us-west-2:
+      ArchiveBucket: ibm-cloud-private-us-west-2
+
 
 Conditions:
   EmptyHostedZoneId: !Equals [!Ref HostedZoneId, '']
@@ -624,9 +714,8 @@ Conditions:
     - !Not [!Equals [!Ref VPCSubdomainPrefix, '']]
     - !Not [!Equals [!Ref HostedZoneId, '']]
 
-  DeployVulnerabilityAdvisor: !Not [!Equals [!Ref VulnerabilityAdvisorNodeCount, 0]]
-
   EmptySubdomainPrefix: !Equals [!Ref VPCSubdomainPrefix, '']
+
 
 Resources:
 
@@ -732,17 +821,28 @@ Resources:
           - !Join ['.', [!Ref ClusterName, !Ref VPCDomain]]
           - !Join ['.', [!Ref ClusterName, !Ref VPCSubdomainPrefix, !Ref VPCDomain]]
           AliasTarget:
-            DNSName: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerDNSName
-            HostedZoneId: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerHostedZoneID
+            DNSName: !GetAtt ClusterMembersStack.Outputs.MasterNodeLoadBalancerDNSName
+            HostedZoneId: !GetAtt ClusterMembersStack.Outputs.MasterNodeLoadBalancerHostedZoneID
           Type: A
-        # DNS entry to map application domain
+
+        # Wildcard application domain DNS entry
         - Name: !If
           - EmptySubdomainPrefix
           - !Join ['.', ['*', !Ref AppSubdomainPrefix, !Ref VPCDomain]]
           - !Join ['.', ['*', !Ref AppSubdomainPrefix, !Ref VPCSubdomainPrefix, !Ref VPCDomain]]
           AliasTarget:
-            DNSName: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerDNSName
-            HostedZoneId: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerHostedZoneID
+            DNSName: !GetAtt ClusterMembersStack.Outputs.ProxyNodeLoadBalancerDNSName
+            HostedZoneId: !GetAtt ClusterMembersStack.Outputs.ProxyNodeLoadBalancerHostedZoneID
+          Type: A
+
+        # Application domain DNS entry
+        - Name: !If
+          - EmptySubdomainPrefix
+          - !Join ['.', [!Ref AppSubdomainPrefix, !Ref VPCDomain]]
+          - !Join ['.', [!Ref AppSubdomainPrefix, !Ref VPCSubdomainPrefix, !Ref VPCDomain]]
+          AliasTarget:
+            DNSName: !GetAtt ClusterMembersStack.Outputs.ProxyNodeLoadBalancerDNSName
+            HostedZoneId: !GetAtt ClusterMembersStack.Outputs.ProxyNodeLoadBalancerHostedZoneID
           Type: A
 
 
@@ -757,9 +857,7 @@ Resources:
         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
-        AvailabilityZones: !Join
-          - ','
-          - !Ref AvailabilityZones
+        AvailabilityZones: !Join [',', !Ref AvailabilityZones]
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
         InternetGateway: !Ref InternetGateway
         PublicSubnets: !Ref PublicSubnets
@@ -778,9 +876,7 @@ Resources:
         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
-        AvailabilityZones: !Join
-          - ','
-          - !Ref AvailabilityZones
+        AvailabilityZones: !Join [',', !Ref AvailabilityZones]
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
         PublicSubnetIds: !GetAtt PublicSubnetStack.Outputs.PublicSubnetIds
         PrivateSubnets: !Ref PrivateSubnets
@@ -800,7 +896,7 @@ Resources:
         ExternalICPAdminLocation: !Ref ExternalICPAdminLocation
         ExternalSSHLocation: !Ref ExternalSSHLocation
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
-        ICPArchiveBucketName: !Sub ${ICPArchiveBucketRootName}-${AWS::Region}
+        ICPArchiveBucketName: !FindInMap [AWSRegionS3Bucket, !Ref "AWS::Region", ArchiveBucket]
         ICPScriptBucketName: !Ref QSS3BucketName
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         PrivateSubnetCIDR: !Ref PrivateSubnetCIDR
@@ -824,14 +920,12 @@ Resources:
 
   BootNodeStack:
     Type: AWS::CloudFormation::Stack
-    # Bootstrap script has code in it that waits for root stack state
-    # to be CREATE_COMPLETE because it needs the stack IDs held in the
-    # root stack Outputs.
     Properties:
       TemplateURL: !Sub
         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-boot.yaml
         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
+        AMIImageId: !FindInMap [AWSRegionAMIEC2, !Ref "AWS::Region", Ubuntu16]
         AdminPassword: !Ref AdminPassword
         AdminUser: !Ref AdminUser
         ApplicationStorageMountPoint: !Ref ApplicationStorageMountPoint
@@ -848,11 +942,13 @@ Resources:
         ClusterPKIBucketName: !Ref ClusterPKIBucketName
         ClusterPKIRootPath: !Ref ClusterPKIRootPath
         CustomArtifactsPath: !Ref CustomArtifactsPath
+        EBSVolumeType: !Ref EBSVolumeType
         EFSDNSName: !GetAtt ClusterSharedStorage.Outputs.EFSDNSName
         EFSFileSystemId: !GetAtt ClusterSharedStorage.Outputs.EFSFileSystemId
         ExcludedMgmtServices: !Ref ExcludedMgmtServices
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
+        ICPArchiveBucketName: !FindInMap [AWSRegionS3Bucket, !Ref "AWS::Region", ArchiveBucket]
         ICPBootNodeScriptPackagePath: !Ref ICPBootNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPS3KeyPrefix: !Ref QSS3KeyPrefix
@@ -864,79 +960,39 @@ Resources:
         KeyName: !Ref KeyName
         MasterNodeCount: !Ref MasterNodeCount
         NATGatewayPublicIPs: !GetAtt PrivateSubnetStack.Outputs.NATGatewayPublicIPs
-        ProxyELBHostedZoneID: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerHostedZoneID
+        ProxyELBHostedZoneID: !GetAtt ClusterMembersStack.Outputs.ProxyNodeLoadBalancerHostedZoneID
         WhichClusterLBAddress: !Ref WhichClusterLBAddress
         WhichProxyLBAddress: !Ref WhichProxyLBAddress
-        ProxyNodeLoadBalancerName: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerDNSName
+        ProxyNodeLoadBalancerName: !GetAtt ClusterMembersStack.Outputs.ProxyNodeLoadBalancerDNSName
         PublicSubnetIds: !GetAtt PublicSubnetStack.Outputs.PublicSubnetIds
         ResourceOwner: !Ref ResourceOwner
         RootStackName: !Ref AWS::StackName
         SecurityStackId: !GetAtt IAMResources.Outputs.StackId
         ServiceCIDR: !Ref ServiceCIDR
-        # Bootstrap script expects root stack ID in position 0 of StackIds
-        StackIds: !If
-          - DeployVulnerabilityAdvisor
-          - !Join
-            - ','
-            - - !Ref AWS::StackId
-              - !GetAtt IAMResources.Outputs.StackId
-              - !GetAtt MasterNodeStack.Outputs.StackId
-              - !GetAtt ManagementNodeStack.Outputs.StackId
-              - !GetAtt VulnerabilityAdvisorNodeStack.Outputs.StackId
-              - !GetAtt ProxyNodeStack.Outputs.StackId
-              - !GetAtt WorkerNodeStack.Outputs.StackId
-          - !Join
-            - ','
-            - - !Ref AWS::StackId
-              - !GetAtt IAMResources.Outputs.StackId
-              - !GetAtt MasterNodeStack.Outputs.StackId
-              - !GetAtt ManagementNodeStack.Outputs.StackId
-              - !GetAtt ProxyNodeStack.Outputs.StackId
-              - !GetAtt WorkerNodeStack.Outputs.StackId
-
+        # StackIds of stacks that have EC2 instances or auto-scaling groups (sans boot stack)
+        StackIds: !GetAtt ClusterMembersStack.Outputs.StackIds
+        StorageIOPS: !Ref StorageIOPS
         VPCDomain: !Ref VPCDomain
 
 
-  MasterNodeStack:
+  ClusterMembersStack:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-master.yaml
-         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
+        - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/icp-cluster-members.yaml
+        - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
       Parameters:
+        AMIImageId: !FindInMap [AWSRegionAMIEC2, !Ref "AWS::Region", Ubuntu16]
+        ApplicationSecurityGroup: !GetAtt IAMResources.Outputs.ApplicationSecurityGroup
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
+        EBSVolumeType: !Ref EBSVolumeType
         EFSDNSName: !GetAtt ClusterSharedStorage.Outputs.EFSDNSName
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
+        ICPArchiveBucketName: !FindInMap [AWSRegionS3Bucket, !Ref "AWS::Region", ArchiveBucket]
         ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPMasterSecurityGroup: !GetAtt IAMResources.Outputs.ICPMasterSecurityGroup
-        ICPS3KeyPrefix: !Ref QSS3KeyPrefix
-        ICPScriptBucketName: !Ref QSS3BucketName
-        ICPVersion: !Ref ICPVersion
-        InternalICPSecurityGroup: !GetAtt IAMResources.Outputs.InternalICPSecurityGroup
-        InternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.InternalSSHSecurityGroup
-        KeyName: !Ref KeyName
-        MasterNodeCount: !Ref MasterNodeCount
-        MasterNodeInstanceType: !Ref MasterNodeInstanceType
-        MasterNodeProfile: !GetAtt IAMResources.Outputs.MasterNodeProfile
-        MasterNodeRole: !GetAtt IAMResources.Outputs.MasterNodeRole
-        PrivateSubnetIds: !GetAtt PrivateSubnetStack.Outputs.PrivateSubnetIds
-        PublicSubnetIds: !GetAtt PublicSubnetStack.Outputs.PublicSubnetIds
-        ResourceOwner: !Ref ResourceOwner
-        RootStackName: !Ref AWS::StackName
-
-
-  ManagementNodeStack:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-mgmt.yaml
-         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
-      Parameters:
-        AvailabilityZoneCount: !Ref AvailabilityZoneCount
-        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
-        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
         ICPNodeRole: !GetAtt IAMResources.Outputs.ICPNodeRole
         ICPS3KeyPrefix: !Ref QSS3KeyPrefix
@@ -947,90 +1003,21 @@ Resources:
         KeyName: !Ref KeyName
         ManagementNodeCount: !Ref ManagementNodeCount
         ManagementNodeInstanceType: !Ref ManagementNodeInstanceType
+        MasterNodeCount: !Ref MasterNodeCount
+        MasterNodeInstanceType: !Ref MasterNodeInstanceType
+        MasterNodeProfile: !GetAtt IAMResources.Outputs.MasterNodeProfile
+        MasterNodeRole: !GetAtt IAMResources.Outputs.MasterNodeRole
         PrivateSubnetIds: !GetAtt PrivateSubnetStack.Outputs.PrivateSubnetIds
-        ResourceOwner: !Ref ResourceOwner
-        RootStackName: !Ref AWS::StackName
-
-
-  VulnerabilityAdvisorNodeStack:
-    Condition: DeployVulnerabilityAdvisor
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-va.yaml
-         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
-      Parameters:
-        AvailabilityZoneCount: !Ref AvailabilityZoneCount
-        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
-        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
-        ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
-        ICPNodeRole: !GetAtt IAMResources.Outputs.ICPNodeRole
-        ICPS3KeyPrefix: !Ref QSS3KeyPrefix
-        ICPScriptBucketName: !Ref QSS3BucketName
-        ICPVersion: !Ref ICPVersion
-        InternalICPSecurityGroup: !GetAtt IAMResources.Outputs.InternalICPSecurityGroup
-        InternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.InternalSSHSecurityGroup
-        KeyName: !Ref KeyName
-        VulnerabilityAdvisorNodeCount: !Ref VulnerabilityAdvisorNodeCount
-        VulnerabilityAdvisorNodeInstanceType: !Ref VulnerabilityAdvisorNodeInstanceType
-        PrivateSubnetIds: !GetAtt PrivateSubnetStack.Outputs.PrivateSubnetIds
-        ResourceOwner: !Ref ResourceOwner
-        RootStackName: !Ref AWS::StackName
-
-
-  ProxyNodeStack:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-proxy.yaml
-         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
-      Parameters:
-        ApplicationSecurityGroup: !GetAtt IAMResources.Outputs.ApplicationSecurityGroup
-        AvailabilityZoneCount: !Ref AvailabilityZoneCount
-        # ExternalSSHSecurityGroup is used for debugging
-        ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
-        IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
-        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
-        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
-        ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
-        ICPNodeRole: !GetAtt IAMResources.Outputs.ICPNodeRole
-        ICPS3KeyPrefix: !Ref QSS3KeyPrefix
-        ICPScriptBucketName: !Ref QSS3BucketName
-        ICPVersion: !Ref ICPVersion
-        InternalICPSecurityGroup: !GetAtt IAMResources.Outputs.InternalICPSecurityGroup
-        InternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.InternalSSHSecurityGroup
-        KeyName: !Ref KeyName
         ProxyNodeCount: !Ref ProxyNodeCount
         ProxyNodeInstanceType: !Ref ProxyNodeInstanceType
-        PrivateSubnetIds: !GetAtt PrivateSubnetStack.Outputs.PrivateSubnetIds
         PublicSubnetIds: !GetAtt PublicSubnetStack.Outputs.PublicSubnetIds
         ResourceOwner: !Ref ResourceOwner
         RootStackName: !Ref AWS::StackName
-
-
-  WorkerNodeStack:
-    Type: AWS::CloudFormation::Stack
-    Properties:
-      TemplateURL: !Sub
-         - https://s3.amazonaws.com/${ScriptBucketName}/${KeyPrefix}templates/ibm-cloud-private-worker.yaml
-         - { ScriptBucketName: !Ref QSS3BucketName, KeyPrefix: !Ref QSS3KeyPrefix }
-      Parameters:
-        AvailabilityZoneCount: !Ref AvailabilityZoneCount
-        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
-        ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
-        ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
-        ICPNodeRole: !GetAtt IAMResources.Outputs.ICPNodeRole
-        ICPS3KeyPrefix: !Ref QSS3KeyPrefix
-        ICPScriptBucketName: !Ref QSS3BucketName
-        ICPVersion: !Ref ICPVersion
-        InternalICPSecurityGroup: !GetAtt IAMResources.Outputs.InternalICPSecurityGroup
-        InternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.InternalSSHSecurityGroup
-        KeyName: !Ref KeyName
+        StorageIOPS: !Ref StorageIOPS
+        VulnerabilityAdvisorNodeCount: !Ref VulnerabilityAdvisorNodeCount
+        VulnerabilityAdvisorNodeInstanceType: !Ref VulnerabilityAdvisorNodeInstanceType
         WorkerNodeCount: !Ref WorkerNodeCount
         WorkerNodeInstanceType: !Ref WorkerNodeInstanceType
-        PrivateSubnetIds: !GetAtt PrivateSubnetStack.Outputs.PrivateSubnetIds
-        ResourceOwner: !Ref ResourceOwner
-        RootStackName: !Ref AWS::StackName
 
 
   InstallationCompletedHandle:
@@ -1050,11 +1037,11 @@ Resources:
 Outputs:
   MasterNodeLoadBalancerName:
     Description: The DNS name of the ICP Master node Elastic Load Balancer.
-    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerDNSName
+    Value: !GetAtt ClusterMembersStack.Outputs.MasterNodeLoadBalancerDNSName
 
   ProxyNodeLoadBalancerName:
     Description: The DNS name of the ICP Proxy node Elastic Load Balancer.
-    Value: !GetAtt ProxyNodeStack.Outputs.ProxyNodeLoadBalancerDNSName
+    Value: !GetAtt ClusterMembersStack.Outputs.ProxyNodeLoadBalancerDNSName
 
   ICPManagementConsole:
     Description: >-

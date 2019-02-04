@@ -8,6 +8,7 @@ import os, fnmatch, yaml
 from subprocess import call
 
 from yapl.utilities.Trace import Trace, Level
+import yapl.utilities.Scrubber as Scrubber
 from yapl.exceptions.Exceptions import MissingArgumentException
 
 # Imports or command helpers
@@ -37,6 +38,7 @@ class CommandHelper(object):
 
   IntrinsicVariables = {}
   IntrinsicVariableNames = []
+  SensitiveVariables = {}
   
   def __init__(self, commandPath=None, intrinsicVariables=None, **restArgs):
     """
@@ -50,9 +52,7 @@ class CommandHelper(object):
         restArgs may have values for custom variables that override the 
         custom variable values in the variables yaml
          
-    """
-    methodName = '__init__'
-    
+    """    
     object.__init__(self)
     
     if (not commandPath):
@@ -66,15 +66,20 @@ class CommandHelper(object):
       self.IntrinsicVariableNames = self.IntrinsicVariables.keys()
     #endIf
     
+    sensitiveVariables = restArgs.get('sensitiveVariables')
+    if (sensitiveVariables):
+      self.SensitiveVariables = sensitiveVariables
+    #endIf
+    
     self.home = os.path.expanduser('~')
       
-    self.variableValues = self.initVariableValues(self.commandPath, **restArgs)
-    self.metadata = self.initMetaData(self.commandPath)
+    self.variableValues = self.__initVariableValues(self.commandPath, **restArgs)
+    self.metadata = self.__initMetaData(self.commandPath)
     
   #endDef
   
   
-  def initVariableValues(self, commandPath, **restArgs):
+  def __initVariableValues(self, commandPath, **restArgs):
     """
       Return a dictionary of variable values for the given command path.
       
@@ -130,14 +135,15 @@ class CommandHelper(object):
     variableValues = self.mergeValues(customVariables,self.IntrinsicVariables)
     
     if (TR.isLoggable(Level.FINEST)):
-      TR.finest(methodName,"All Variable Values: %s" % variableValues)
+      cleaned = Scrubber.dreplace(variableValues,self.SensitiveVariables)
+      TR.finest(methodName,"Scrubbed Variable Values: %s" % cleaned)
     #endIf
     
     return variableValues
   #endDef
   
   
-  def initMetaData(self, commandPath):
+  def __initMetaData(self, commandPath):
     """
       Initialize the meta data for the given command path.
     """
@@ -359,7 +365,8 @@ class CommandHelper(object):
     parameters = restArgs.get('parameters')
     if (parameters):   
       if (TR.isLoggable(Level.FINEST)):
-        TR.finest(methodName,"Parameters: %s" % parameters)
+        cleaned = Scrubber.dreplace(parameters,self.SensitiveVariables)
+        TR.finest(methodName,"Scrubbed Parameters: %s" % cleaned)
       #endIf
       parameterNames = parameters.keys()
     else:

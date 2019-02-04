@@ -86,4 +86,4 @@ source ~/mystack.props
 # Hack to make scripts executable.
 chmod +x scripts/*.sh
 
-~/bootstrap.py --region "${REGION}" --stackid "${STACK_ID}" --stack-name ${STACK_NAME} --role ${ROLE} --logfile $LOGFILE --loglevel "*=all"
+~/bootstrap.py --region "${REGION}" --stackid "${STACK_ID}" --stack-name ${STACK_NAME} --role ${ROLE} --logfile $LOGFILE --loglevel "@{LOGLEVEL}"

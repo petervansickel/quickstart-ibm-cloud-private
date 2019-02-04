@@ -12,10 +12,25 @@ Description: >-
 
 Parameters:
   # Variables are declared in alphabetical order.
+  AMIImageId:
+    Description: >-
+      The AMI virutal machine image identifier.  Root template defines the mapping by region.
+    Type: String
+
   AvailabilityZoneCount:
     Description: >-
       The number of Availability Zones.
     Type: Number
+
+  EBSVolumeType:
+    Description: >-
+      The type of EBS volume to use for the cluster member EC2 instances. The io1 volume type supports the specification of the disk IOPS.  The gp2 volume type is less expensive and may perform well enough for your purposes. The StorageIOPS parameter specifies the IOPS of an io2 storage device.
+    Type: String
+
+  ICPArchiveBucketName:
+    Description: >-
+      The name of the S3 bucket where the ICP install archive and Docker install binary is located.  The bucket name is needed to establish permission to access the ICP and Docker installation archives. Root template uses a mapping based on AWS region to provide the archive bucket name.
+    Type: String
 
   ICPClusterNodeScriptPackagePath:
     Description: >-
@@ -69,6 +84,21 @@ Parameters:
     Type: AWS::EC2::KeyPair::KeyName
     ConstraintDescription: Must be the name of an existing EC2 KeyPair.
 
+  PrivateSubnetIds:
+    Description: >-
+      A comma delimted list of private subnet resource IDs passed in from the parent stack. The PrivateSubnetIds are used to configure the Vulnerability Advisor node auto-scaling group.
+    Type: String
+
+  ResourceOwner:
+    Description: >-
+      Value for the owner tag for the deployed resource associated with the stack.
+    Type: String
+
+  RootStackName:
+    Description: >-
+      The root stack name. The root stack name is used as the common unique name for the Kubernetes tag on all EC2 instances in the cluster.
+    Type: String
+
   VulnerabilityAdvisorNodeCount:
     Description: >-
       Number of Vulnerability Advisor nodes to be deployed in the ICP cluster. Not typically deployed for a development environment. For production deployments, typically 3 are deployed. VA uses zookeeper which requires an odd number of instances for consistency voting purposes. The VA nodes run the resource image and container security scanning components.
@@ -88,51 +118,16 @@ Parameters:
       - m5d.4xlarge
     ConstraintDescription: Must be a valid EC2 instance type.
 
-  PrivateSubnetIds:
+  StorageIOPS:
     Description: >-
-      A comma delimted list of private subnet resource IDs passed in from the parent stack. The PrivateSubnetIds are used to configure the Vulnerability Advisor node auto-scaling group.
-    Type: String
+      The maximum number of read and write operations per second for the EBS storage devices provisioned to the IBM Cloud Private cluster member EC2 instances. The io1 storage volume type supports an explicit setting of the IOPS of the device. The EBSVolumeType parameter specifies the storage volume type. This parameter is ignored if the EBSVolumeType is set to gp2.
+    Type: Number
 
-  ResourceOwner:
-    Description: >-
-      Value for the owner tag for the deployed resource associated with the stack.
-    Type: String
-
-  RootStackName:
-    Description: >-
-      The root stack name. The root stack name is used as the common unique name for the Kubernetes tag on all EC2 instances in the cluster.
-    Type: String
-
-Mappings:
-  # See https://cloud-images.ubuntu.com/locator/ec2/
-  # Builds needed that support HVM, Elastic Network Adapter (ENA)
-  # in order to use the MD5 instance types.
-  # Use EBS backed storage as opposed "instance-store", e.g., hvm:ebs-ssd
-  # TODO - Update EU an AP
-  AWSRegionAMIEC2:
-    us-east-1:
-      Ubuntu16: ami-ef151d90
-    us-east-2:
-      Ubuntu16: ami-dad5efbf
-    us-west-1:
-      Ubuntu16: ami-d8b05cbb
-    us-west-2:
-      Ubuntu16: ami-1cc69e64
-    eu-west-1:
-      Ubuntu16: ami-844e0bf7
-    eu-central-1:
-      Ubuntu16: ami-a9a557c6
-    ap-northeast-1:
-      Ubuntu16: ami-032f516e93380b8e6
-    ap-northeast-2:
-      Ubuntu16: ami-0eee4dcc71fced4cf
-    ap-southeast-1:
-      Ubuntu16: ami-d554f1b6
-    ap-southeast-2:
-      Ubuntu16: ami-0bc1f168
 
 Conditions:
   3AZCondition: !Equals [!Ref AvailabilityZoneCount, 3]
+  GPStorage: !Equals [!Ref EBSVolumeType, gp2]
+
 
 Resources:
 
@@ -190,13 +185,11 @@ Resources:
     Properties:
       InstanceType: !Ref VulnerabilityAdvisorNodeInstanceType
       IamInstanceProfile: !Ref ICPNodeProfile
+      ImageId: !Ref AMIImageId
       KeyName: !Ref KeyName
-      ImageId: !FindInMap
-          - AWSRegionAMIEC2
-          - !Ref AWS::Region
-          - Ubuntu16
 
-      # TBD - Is this needed.  These are on a private subnet.
+      # This is only needed when debugging nodeinit.py and the
+      # auto-scaling group is assigned to the public subnet
       #AssociatePublicIpAddress: true
 
       UserData:
@@ -226,10 +219,10 @@ Resources:
       BlockDeviceMappings:
         - DeviceName: /dev/sda1
           Ebs:
-            VolumeType: io1
+            VolumeType: !Ref EBSVolumeType
             DeleteOnTermination: true
             VolumeSize: 500
-            Iops: 8000
+            Iops: !If [GPStorage, !Ref "AWS::NoValue", !Ref StorageIOPS]
 
   VulnerabilityAdvisorNodeAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup

@@ -24,6 +24,10 @@
     "ParameterValue": "m5.xlarge"
   },
   {
+    "ParameterKey": "EBSVolumeType",
+    "ParameterValue": "gp2"
+  },
+  {
     "ParameterKey": "ExcludedMgmtServices",
     "ParameterValue": "istio,vulnerability-advisor,custom-metrics-adapter"
   },

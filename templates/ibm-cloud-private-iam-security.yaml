@@ -51,8 +51,7 @@ Parameters:
 
   ICPArchiveBucketName:
     Description: >-
-      The name of the S3 bucket where the ICP install archive and Docker install binary is located.  For the QuickStart this gets a well known default value
-      with a root of "ibm-cloud-private", a dash (-), followed by the region name, e.g., ibm-cloud-private-us-east-1. The bucket name is needed to establish permission to access the ICP and Docker installation archives.
+      The name of the S3 bucket where the ICP install archive and Docker install binary is located.  The bucket name is needed to establish permission to access the ICP and Docker installation archives. Root template uses a mapping based on AWS region to provide the archive bucket name.
     Type: String
 
   ICPDeploymentLogsBucketName:
