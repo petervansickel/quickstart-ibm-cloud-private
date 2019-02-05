@@ -27,7 +27,6 @@ tests:
       - ap-southeast-1
       - eu-central-1
       - eu-west-1
-      - eu-west-2
   icp-ha-dns:
     parameter_input: icp310-ha-dns.json
     template_file: ibm-cloud-private-root.yaml
