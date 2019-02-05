@@ -83,8 +83,6 @@ Metadata:
           default: (Optional) Advanced deployment configuration
         Parameters:
           - CustomArtifactsPath
-          - ICPBootNodeScriptPackagePath
-          - ICPClusterNodeScriptPackagePath
           - KeyFilePath
 
       - Label:
@@ -133,10 +131,6 @@ Metadata:
         default: External SSH location
       HostedZoneId:
         default: Hosted zone identifier
-      ICPBootNodeScriptPackagePath:
-        default: IBM Cloud Private boot node script package path
-      ICPClusterNodeScriptPackagePath:
-        default: IBM Cloud Private cluster node script package path
       ICPDeploymentLogsBucketName:
         default: IBM Cloud Private deployment logs bucket name
       ICPVersion:
@@ -351,20 +345,6 @@ Parameters:
       (Optional) If an existing DNS hosted zone is to be used, then the hosted zone ID needs to be specified with this parameter.  Leave it empty if a DNS hosted zone is to be created as part of the deployment.
     Type: String
     Default: ''
-
-  ICPBootNodeScriptPackagePath:
-    Description: >-
-      The path in the S3 bucket to the ICP Boot node script package (zip) file. Do not include a leading / on the path value.
-    Type: String
-    Default: scripts/aws-icp-bootstrap.zip
-
-  ICPClusterNodeScriptPackagePath:
-    Description: >-
-      The path in the S3 script bucket to the ICP cluster node script package (zip) file.
-      Do not include a leading / on the path value.
-      Cluster nodes are master, proxy, worker, management, vulnerability advisor.
-    Type: String
-    Default: scripts/aws-icp-nodeinit.zip
 
   ICPDeploymentLogsBucketName:
     Description: >-
@@ -706,6 +686,12 @@ Mappings:
     us-west-2:
       ArchiveBucket: ibm-cloud-private-us-west-2
 
+  ScriptPackageMap:
+    boot-node:
+      script-package-path: scripts/aws-icp-bootstrap.zip
+    cluster-node:
+      script-package-path: scripts/aws-icp-nodeinit.zip
+
 Rules:
   EFSSupportedRegionRule:
     Assertions:
@@ -969,7 +955,7 @@ Resources:
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
         ICPArchiveBucketName: !FindInMap [AWSRegionS3Bucket, !Ref "AWS::Region", ArchiveBucket]
-        ICPBootNodeScriptPackagePath: !Ref ICPBootNodeScriptPackagePath
+        ICPBootNodeScriptPackagePath: !FindInMap [ScriptPackageMap, boot-node, script-package-path]
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPS3KeyPrefix: !Ref QSS3KeyPrefix
         ICPScriptBucketName: !Ref QSS3BucketName
@@ -1010,7 +996,7 @@ Resources:
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
         ICPArchiveBucketName: !FindInMap [AWSRegionS3Bucket, !Ref "AWS::Region", ArchiveBucket]
-        ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
+        ICPClusterNodeScriptPackagePath: !FindInMap [ScriptPackageMap, cluster-node, script-package-path]
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPMasterSecurityGroup: !GetAtt IAMResources.Outputs.ICPMasterSecurityGroup
         ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
