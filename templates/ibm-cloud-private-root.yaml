@@ -688,9 +688,9 @@ Mappings:
 
   ScriptPackageMap:
     boot-node:
-      script-package-path: scripts/aws-icp-bootstrap.zip
+      ScriptPackagePath: scripts/aws-icp-bootstrap.zip
     cluster-node:
-      script-package-path: scripts/aws-icp-nodeinit.zip
+      ScriptPackagePath: scripts/aws-icp-nodeinit.zip
 
 Rules:
   EFSSupportedRegionRule:
@@ -955,7 +955,7 @@ Resources:
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
         ICPArchiveBucketName: !FindInMap [AWSRegionS3Bucket, !Ref "AWS::Region", ArchiveBucket]
-        ICPBootNodeScriptPackagePath: !FindInMap [ScriptPackageMap, boot-node, script-package-path]
+        ICPBootNodeScriptPackagePath: !FindInMap [ScriptPackageMap, boot-node, ScriptPackagePath]
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPS3KeyPrefix: !Ref QSS3KeyPrefix
         ICPScriptBucketName: !Ref QSS3BucketName
@@ -996,7 +996,7 @@ Resources:
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
         ICPArchiveBucketName: !FindInMap [AWSRegionS3Bucket, !Ref "AWS::Region", ArchiveBucket]
-        ICPClusterNodeScriptPackagePath: !FindInMap [ScriptPackageMap, cluster-node, script-package-path]
+        ICPClusterNodeScriptPackagePath: !FindInMap [ScriptPackageMap, cluster-node, ScriptPackagePath]
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPMasterSecurityGroup: !GetAtt IAMResources.Outputs.ICPMasterSecurityGroup
         ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
