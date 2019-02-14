@@ -1,0 +1,18 @@
+#
+# Commands to install the Kubernetes hyperkube patch for ICP 3.1.0
+#
+# The docker run command is described in detail here:
+# https://docs.docker.com/engine/reference/commandline/run/
+# WARNING: As of FEB 2019 only the bare minimum of docker run is supported.
+# See the DockerHelper module.
+#
+kind: docker 
+command: load
+
+# change directory to run the command:
+chdir: ${ICPHome}/cluster
+
+# singleton options take an argument
+# multi-character option names get a double-dash
+options:
+  input: ibmcom-icp-inception-amd64-311ee-aws-install-patch.tar
