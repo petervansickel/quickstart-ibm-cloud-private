@@ -1,0 +1,16 @@
+# Get the patched inception image for ICP 3.1.1 install on AWS from the installation artifacts bucket.
+# 
+# Attributes are parameters for boto3 S3 client download_file() method.
+# See: https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/s3.html#S3.Client.download_file
+#
+kind: s3
+command: download_file
+
+# boto3 S3 client download_file() parameters:
+Bucket: ${ICPArchiveBucketName}
+Key: 3.1.1/ibmcom-icp-inception-amd64-311ee-aws-install-patch.tar
+Filename: ${ICPHome}/cluster/ibmcom-icp-inception-amd64-311ee-aws-install-patch.tar
+
+# Additional custom parameters:
+# mode value is expected to be octal - leading 0 needed for python 2.7
+mode: 0644

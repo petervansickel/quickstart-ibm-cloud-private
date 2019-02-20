@@ -27,7 +27,7 @@ Parameters:
 
   EFSDNSName:
     Description: >-
-      The EFS server public DNS name providing shared storage used by the master nodes for the various mount points they need to share, i.e., docker registry, kubernetes audit log, ICP audit log.  Used by the master node initialization script when there is more than 1 master node.
+      The EFS server public DNS name providing shared storage used by the master and Vulnerability Advisor nodes for the various mount points they need to share. For example, the master nodes share the docker registry. The Vulnerability Advisor nodes share the Minio storage starting with ICP 3.1.1.
     Type: String
 
   ExternalSSHSecurityGroup:
@@ -305,6 +305,7 @@ Resources:
         AMIImageId: !Ref AMIImageId
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
         EBSVolumeType: !Ref EBSVolumeType
+        EFSDNSName: !Ref EFSDNSName
         ICPArchiveBucketName: !Ref ICPArchiveBucketName
         ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName

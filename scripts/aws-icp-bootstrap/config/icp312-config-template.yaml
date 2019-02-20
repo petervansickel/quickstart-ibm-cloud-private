@@ -1,7 +1,3 @@
-# Licensed Materials - Property of IBM
-# IBM Cloud private
-# @ Copyright IBM Corp. 2017 All Rights Reserved
-# US Government Users Restricted Rights - Use, duplication or disclosure restricted by GSA ADP Schedule Contract with IBM Corp.
 
 ---
 
@@ -10,14 +6,14 @@ network_type: calico
 # network_helm_chart_path: < helm chart path >
 
 ## Network in IPv4 CIDR format
-network_cidr: 10.1.0.0/16
+network_cidr: ${CLUSTER_CIDR}
 
 ## Kubernetes Settings
-service_cluster_ip_range: 10.0.0.1/24
+service_cluster_ip_range: ${SERVICE_CIDR}
 
-# cluster_domain: cluster.local
-# cluster_name: mycluster
-# cluster_CA_domain: "{{ cluster_name }}.icp"
+cluster_domain: ${CLUSTER_DOMAIN}
+cluster_name: ${CLUSTER_NAME}
+cluster_CA_domain: ${CLUSTER_CA_DOMAIN}
 
 ## Etcd Settings
 etcd_extra_args: ["--grpc-keepalive-timeout=0", "--grpc-keepalive-interval=0", "--snapshot-count=10000"]
@@ -30,8 +26,8 @@ etcd_extra_args: ["--grpc-keepalive-timeout=0", "--grpc-keepalive-interval=0", "
 # wait_for_timeout: 600
 
 ## Advanced Settings
-default_admin_user: admin
-default_admin_password: admin
+default_admin_user: ${ADMIN_USER}
+default_admin_password: ${ADMIN_PASSWORD}
 # ansible_user: <username>
 # ansible_become: true
 # ansible_become_password: <password>
@@ -149,7 +145,7 @@ default_admin_password: admin
 ## Network Settings
 ## Calico Network Settings
 # calico_ipip_enabled: true
-# calico_tunnel_mtu: 1430
+calico_tunnel_mtu: ${CALICO_TUNNEL_MTU}
 # calico_ip_autodetection_method: can-reach={{ groups['master'][0] }}
 
 ## IPSec mesh Settings
@@ -170,11 +166,11 @@ isolated_proxies: []
 
 ## External loadbalancer IP or domain
 ## Or floating IP in OpenStack environment
-# cluster_lb_address: none
+cluster_lb_address: ${CLUSTER_LB_ADDRESS}
 
 ## External loadbalancer IP or domain
 ## Or floating IP in OpenStack environment
-# proxy_lb_address: none
+proxy_lb_address: ${PROXY_LB_ADDRESS}
 
 ## Install in firewall enabled mode
 # firewall_enabled: false
@@ -186,18 +182,18 @@ isolated_proxies: []
 vip_manager: etcd
 
 ## High Availability Settings for master nodes
-# vip_iface: eth0
-# cluster_vip: 127.0.1.1
+#vip_iface: ${CLUSTER_VIP_IFACE}
+#cluster_vip: ${CLUSTER_VIP}
 
 ## High Availability Settings for Proxy nodes
-# proxy_vip_iface: eth0
-# proxy_vip: 127.0.1.1
+#proxy_vip_iface: ${PROXY_VIP_IFACE}
+#proxy_vip: ${PROXY_VIP}
 
 ## vSphere cloud provider Settings
 ## If user wants to configure vSphere as cloud provider, vsphere_conf
 ## parameters should be configured through config.yaml
-# kubelet_nodename: hostname
-# cloud_provider: vsphere
+kubelet_nodename: ${KUBLET_NODENAME}
+cloud_provider: ${CLOUD_PROVIDER}
 # vsphere_conf:
 #    user: <vCenter username for vSphere cloud provider>
 #    password: <password for vCenter user>
@@ -219,11 +215,68 @@ vip_manager: etcd
 #   storage-glusterfs
 #   vulnerability-advisor
 management_services:
-  istio: disabled
-  vulnerability-advisor: disabled
-  storage-glusterfs: disabled
-  storage-minio: disabled
+  custom-metrics-adapter: ${CUSTOM_METRICS_ADAPTER}
+  image-security-enforcement: ${IMAGE_SECURITY_ENFORCEMENT}
+  istio: ${ISTIO}
+  metering: ${METERING}
+  monitoring: ${MONITORING}
+  service-catalog: ${SERVICE_CATALOG}
+  storage-minio: ${MINIO}
+  storage-glusterfs: ${GLUSTERFS}
+  vulnerability-advisor: ${VULNERABILITY_ADVISOR}
 
+# ICP 3.1 KC indicates to add this to the config.yaml
+# PVS: Each policy has a name and a policy attribute, but
+# policy is always empty (as far as I've seen).
+# PVS: The long list of image policies is based on what is 
+# needed for the collection of helm charts in the standard helm
+# repos that are available out-of-the-box.
+# All values need to be quoted to avoid YAML syntax issues, e.g., a colon in the value.
+image-security-enforcement:
+  clusterImagePolicy:
+    - name: "${CLUSTER_DNS_NAME}:8500/*"
+    - name: "docker.io/ibmcom/*"
+    - name: "docker.io/hybridcloudibm/*"
+    - name: "docker.io/db2eventstore/*"
+    - name: "docker.io/icpdashdb/*"
+    - name: "docker.io/iighostd/*"
+    - name: "docker.io/store/ibmcorp/*"
+    - name: "docker.io/alpine*"
+    - name: "docker.io/busybox*"
+    - name: "docker.io/dduportal/bats:*"
+    - name: "docker.io/cassandra:*"
+    - name: "docker.io/haproxy:*"
+    - name: "docker.io/hazelcast/hazelcast-kubernetes:*"
+    - name: "docker.io/library/busybox:*"
+    - name: "docker.io/minio/mc:*"
+    - name: "docker.io/minio/minio:*"
+    - name: "docker.io/nginx:*"
+    - name: "docker.io/open-liberty:*"
+    - name: "docker.io/rabbitmq:*"
+    - name: "docker.io/radial/busyboxplus:*"
+    - name: "docker.io/ubuntu*"
+    - name: "docker.io/websphere-liberty:*"
+    - name: "docker.io/wurstmeister/kafka:*"
+    - name: "docker.io/zookeeper:*"
+    - name: "docker.io/ibmcloudcontainers/strongswan:*"
+    - name: "docker.io/opsh2oai/dai-ppc64le:*"
+    - name: "docker.io/redis*"
+    - name: "docker.io/f5networks/k8s-bigip-ctlr:*"
+    - name: "docker.io/rook/rook:*"
+    - name: "docker.io/couchdb:*"
+    - name: "docker.elastic.co/beats/filebeat:*"
+    - name: "docker.io/prom/statsd-exporter:*"
+    - name: "docker.elastic.co/elasticsearch/elasticsearch:*"
+    - name: "docker.elastic.co/kibana/kibana:*"
+    - name: "docker.elastic.co/logstash/logstash:*"
+    - name: "quay.io/k8scsi/csi-attacher:*"
+    - name: "quay.io/k8scsi/driver-registrar:*"
+    - name: "quay.io/k8scsi/nfsplugin:*"
+    - name: "quay.io/external_storage/efs-provisioner:*"
+    - name: "k8s.gcr.io/hyperkube:*"
+    - name: "registry.bluemix.net/ibm/*"
+    - name: "registry.bluemix.net/armada-master/ibm-worker-recovery:*"
+      
 ## Docker configuration option, more options see
 ## https://docs.docker.com/engine/reference/commandline/dockerd/#daemon-configuration-file
 # docker_config:
@@ -241,7 +294,7 @@ management_services:
 # docker_version: 18.03.1
 
 ## Install Docker automatically or not
-# install_docker: true
+install_docker: false
 
 ## Nginx Ingress Controller configuration
 ## You can add your nginx ingress controller configuration, and the allowed configuration can refer to
