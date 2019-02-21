@@ -1,7 +1,7 @@
 [
   {
     "ParameterKey": "AdminPassword",
-    "ParameterValue": "$[taskcat_genpass_12A]"
+    "ParameterValue": "$[taskcat_genpass_34A]"
   },
   {
     "ParameterKey": "AdminUser",
