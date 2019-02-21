@@ -305,7 +305,6 @@ Resources:
         AMIImageId: !Ref AMIImageId
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
         EBSVolumeType: !Ref EBSVolumeType
-        EFSDNSName: !Ref EFSDNSName
         ICPArchiveBucketName: !Ref ICPArchiveBucketName
         ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
