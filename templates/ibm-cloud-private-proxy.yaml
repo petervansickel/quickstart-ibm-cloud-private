@@ -312,6 +312,9 @@ Resources:
       MinSize: 1
       MaxSize: 3
       Tags:
+        - Key: Name
+          Value: Proxy
+          PropagateAtLaunch: true
         - Key: Owner
           Value: !Ref ResourceOwner
           PropagateAtLaunch: true
