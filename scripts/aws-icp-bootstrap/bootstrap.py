@@ -3,7 +3,7 @@
 """
 Created on 30 MAY 2018
 
-@author: Peter Van Sickel pvs@us.ibm.com
+@author: Peter Van Sickel
 
 Description:
   Bootstrap script for ICP AWS Quickstart
@@ -92,6 +92,17 @@ History:
   25 JAN 2019 - pvs Introduced "Scrubber" to scrub sensitive data from objects before they 
   get written to a trace file.  Motivated by the need to keep AWS keys from being exposed
   in trace log files.
+  
+  01 FEB 2019 - pvs Started the gradual process of refactoring methods out of bootstrap and
+  into classes.  For example LogExporter and S3Helper.  LogExporter is used by both bootstrap
+  and nodeinit.
+  
+  02 - 04 FEB 2019 - pvs Introduced post-install command processing to support applying of
+  patches and fix packs.
+  
+  11 FEB 2019 - pvs Introduced pre-install command for processing commands before kicking off 
+  the inception install.  The initial motivation for pre-install was the loading of the patched
+  inception image for ICP 3.1.1 necessary to install on AWS.
 """
 
 from Crypto.PublicKey import RSA
@@ -117,11 +128,13 @@ from yapl.exceptions.ICPExceptions import ICPInstallationException
 # Having trouble getting InstallDocker to work due to Ansible Python library issues.
 #from yapl.docker.InstallDocker import InstallDocker
 
+from yapl.aws.LogExporter import LogExporter
 from yapl.icp.AWSConfigureICP import ConfigureICP
 from yapl.icp.AWSConfigureEFS import ConfigureEFS
 from yapl.icp.ConfigurePKI import ConfigurePKI
 from yapl.k8s.ConfigureKubectl import ConfigureKubectl
 from yapl.icp.ConfigureHelm import ConfigureHelm
+from yapl.icp.CommandsSetProcessor import CommandSetProcessor
 from yapl.icp.CommandHelper import CommandHelper
 from yapl.aws.SecurityHelper import SecurityHelper
 
@@ -142,7 +155,7 @@ HelpFile = "bootstrap.txt"
 
 
 """
-  The StackParameters are imported from the CloudFormation stack in the _init() 
+  The StackParameters are imported from the CloudFormation stack in the __init() 
   method below.
 """
 StackParameters = {}
@@ -167,6 +180,7 @@ SensitiveParameters = {
 IntrinsicVariableNames = [
     "AWSAccessKeyId",
     "AWSSecretKey",
+    "AWSRegion",
     "BootNodePrivateIPv4Address",
     "BootNodePublicIPv4Address",
     "ClusterCertPath",
@@ -179,6 +193,8 @@ IntrinsicVariableNames = [
     "HelmKeyPath",
     "HelmCertPath",
     "IBMCloudPrivateVPC",
+    "ICPArchiveBucketName",
+    "ICPHome",
     "ICPVersion",
     "KubeCertPath",
     "KubeKeyPath",
@@ -192,26 +208,11 @@ IntrinsicVariables = {}
 """
   The SSMParameterKeys are used for rudimentary communication of state information
   between the boot node and the cluster nodes.
-  The SSMParameterKeys gets initialized in the _init() method.
+  The SSMParameterKeys gets initialized in the __init() method.
 """
 SSMParameterKeys = []
 
 TR = Trace(__name__)
-
-class EFSVolume:
-  """
-    Simple class to manage an EFS volume.
-  """
-  
-  def __init__(self,efsServer,mountPoint):
-    """
-      Constructor
-    """
-    self.efsServer = efsServer
-    self.mountPoint = mountPoint
-  #endDef
-  
-#endClass
 
 
 class Host:
@@ -262,7 +263,7 @@ class Bootstrap(object):
     """
       Constructor
       
-      NOTE: Some instance variable initialization happens in self._init() which is 
+      NOTE: Some instance variable initialization happens in self.__init() which is 
       invoked early in main() at some point after getStackParameters().
       
     """
@@ -551,7 +552,7 @@ class Bootstrap(object):
   #endDef
   
   
-  def _init(self, rootStackName, bootStackId):
+  def __init(self, rootStackName, bootStackId):
     """
       Additional initialization of the Bootstrap instance based on stack parameters.
       
@@ -582,6 +583,13 @@ class Bootstrap(object):
     
     StackParameters = self.getStackParameters(bootStackId)
     StackParameterNames = StackParameters.keys()
+    
+    self.logExporter = LogExporter(region=self.region,
+                                   bucket=self.ICPDeploymentLogsBucketName,
+                                   keyPrefix='logs/%s' % self.rootStackName,
+                                   role=self.role,
+                                   fqdn=self.fqdn
+                                   )
     
     if (TR.isLoggable(Level.FINEST)):
       cleaned = Scrubber.dreplace(StackParameters,SensitiveParameters)
@@ -625,7 +633,19 @@ class Bootstrap(object):
       securityPath = None
     #endIf
     self.securityPath = securityPath
-      
+    
+    preInstallPath = os.path.join(self.home,"custom-install",self.ICPVersion,"pre-install")
+    if (not os.path.isdir(preInstallPath)):
+      preInstallPath = None
+    #endIf
+    self.preInstallPath = preInstallPath
+    
+    postInstallPath = os.path.join(self.home,"custom-install",self.ICPVersion,"post-install")
+    if (not os.path.isdir(postInstallPath)):
+      postInstallPath = None
+    #endIf
+    self.postInstallPath = postInstallPath
+    
     # The root stack parameter InceptionTimeout is expected to be provided.    
     if (not self.InceptionTimeout):
       if (TR.isLoggable(Level.FINER)):
@@ -665,7 +685,10 @@ class Bootstrap(object):
     IntrinsicVariables['BootNodePublicIPv4Address'] = self.getPublicIPv4Address()
     IntrinsicVariables['NATGatewayPublicIPv4Address'] = self.getNATGatewayIPv4Address()
     
-    # AWSRegion and VPCId are used w
+    # ICP home is used when installing patches
+    IntrinsicVariables['ICPHome'] = self.icpHome
+    
+    # AWSRegion and VPCId are used in Helm charts to install AWS Service Broker
     IntrinsicVariables['AWSRegion'] = self.region
     IntrinsicVariables['VPCId'] = self.IBMCloudPrivateVPC
   #endDef
@@ -1175,7 +1198,7 @@ class Bootstrap(object):
       Cleanup method that deletes all the SSM parameters used to orchestrate the deployment.
       
       The SSMParameterKeys gets initialized in _getSSMParameterKeys() which gets called in 
-      the _init() method after the cluster hosts have all been determined by introspecting
+      the __init() method after the cluster hosts have all been determined by introspecting
       the CloudFormation stack.
       
       No need to attempt to delete_parameters if SSMParameterKeys is empty, which it 
@@ -1722,7 +1745,7 @@ class Bootstrap(object):
     #endIf
     
     try:
-      TR.info(methodName,'Executing: ansible-playbook %s, --extra-vars "target_nodes=%s" --inventory=%s.' % (playbookPath,targetNodes,inventory))
+      TR.info(methodName,'Executing: ansible-playbook %s --extra-vars "target_nodes=%s" --inventory=%s.' % (playbookPath,targetNodes,inventory))
       if (logFilePath):
         retcode = call('ansible-playbook %s --extra-vars "target_nodes=%s" --inventory %s >> %s 2>&1' % (playbookPath, targetNodes,inventory,logFilePath), shell=True)
       else:
@@ -1795,13 +1818,6 @@ class Bootstrap(object):
     methodName = "configureEFS"
     
     TR.info(methodName,"STARTED configuration of EFS on all worker nodes.")
-    # Configure shared storage for applications to use the EFS provisioner
-    # This commented out code is obsolete.  The boot node is on the public
-    # subnet and cannot access the EFS mount targets on the private subnets.
-    #efsServer = self.EFSDNSName                    # An input to the boot node
-    #mountPoint = self.ApplicationStorageMountPoint # Also a boot node input
-    #efsVolumes = EFSVolume(efsServer,mountPoint)
-    #self.mountEFSVolumes(efsVolumes)
     
     # Configure EFS storage on all of the worker nodes.
     playbookPath = os.path.join(self.home,"playbooks","configure-efs-mount.yaml")
@@ -2080,6 +2096,9 @@ class Bootstrap(object):
   
   def installICPWithFixpack(self, installMap):
     """
+      WARNING: Deprecated in favor of the pre-install and post-install command processing
+      capability implemented in the 3.1.0 and 3.1.1 time frame.  
+      
       Install ICP with the inception fixpack image and install the ICP fixpack.
       
       WARNING: This method, and the supporting code artifacts, is implemented to 
@@ -2168,103 +2187,6 @@ class Bootstrap(object):
     
   #endDef
 
-
-  def exportLogs(self, bucketName, stackName, logsDirectoryPath):
-    """
-      Export the deployment logs to the given S3 bucket for the given stack.
-      
-      Each log will be exported using a path with the stackName at the root and the 
-      log file name as the next element of the path.
-      
-      NOTE: Prefer not to use trace in this method as the bootstrap log file has 
-      already had the "END" message emitted to it.
-    """
-    methodName = "exportLogs"
-    
-    if (not os.path.exists(logsDirectoryPath)):
-      if (TR.isLoggable(Level.FINE)):
-        TR.fine(methodName, "Logs directory: %s does not exist." % logsDirectoryPath)
-      #endIf
-    else:
-      logFileNames = os.listdir(logsDirectoryPath)
-      if (not logFileNames):
-        if (TR.isLoggable(Level.FINE)):
-          TR.fine(methodName,"No log files in %s" % logsDirectoryPath)
-        #endIf
-      else:
-        for fileName in logFileNames:
-          bodyPath = os.path.join(logsDirectoryPath,fileName)
-          if (os.path.isfile(bodyPath)):
-            s3Key = "%s/%s/%s/%s" % (stackName,self.role,self.fqdn,fileName)
-            
-            if (TR.isLoggable(Level.FINE)):
-              TR.fine(methodName,"Exporting log: %s to S3: %s:%s" % (bodyPath,bucketName,s3Key))
-            #endIf
-            with open(bodyPath, 'r') as bodyFile:
-              self.s3.put_object(Bucket=bucketName, Key=s3Key, Body=bodyFile)
-            #endWith
-          #endIf
-        #endFor
-      #endIf
-    #endIf
-  #endDef
-  
-  
-  def mountEFSVolumes(self, volumes):
-    """
-      Mount the EFS storage volumes for the audit log and the Docker registry.
-      
-      volumes is either a singleton instance of EFSVolume or a list of instances
-      of EFSVolume.  EFSVolume has everything needed to mount the volume on a
-      given mount point.
- 
-      NOTE: It is assumed that nfs-utils (RHEL) or nfs-common (Ubuntu) has been
-      installed on the nodes were EFS mounts are implemented.
-     
-      Depending on what EFS example you look at the options to the mount command vary.
-      The options used in this method are from this AWS documentation:
-      https://docs.aws.amazon.com/efs/latest/ug/wt1-test.html
-      Step 3.3 has the mount command template and the options are:
-      nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport
-      
-      The following defaults options are also included:
-        rw,suid,dev,exec,auto,nouser
-      
-      WARNING: The boot node is on the public subnet and may not have access to 
-      the EFS mount targets on the private subnets.  The security group may 
-      be configured such that only private subnets can get to the EFS server 
-      mount targets.
-    """
-    methodName = "mountEFSVolumes"
-    
-    if (not volumes):
-      raise MissingArgumentException("One or more EFS volumes must be provided.")
-    #endIf
-    
-    if (type(volumes) != type([])):
-      volumes = [volumes]
-    #endIf
-
-    # See method doc above for AWS source for mount options used in the loop body below.
-    options = "rw,suid,dev,exec,auto,nouser,nfsvers=4.1,rsize=1048576,wsize=1048576,hard,timeo=600,retrans=2,noresvport"
-    
-    for volume in volumes:
-      if (not os.path.exists(volume.mountPoint)):
-        os.makedirs(volume.mountPoint)
-        TR.info(methodName,"Created directory for EFS mount point: %s" % volume.mountPoint)
-      elif (not os.path.isdir(volume.mountPoint)):
-        raise Exception("EFS mount point path: %s exists but is not a directory." % volume.mountPoint)
-      else:
-        TR.info(methodName,"EFS mount point: %s already exists." % volume.mountPoint)
-      #endIf
-      retcode = call("mount -t nfs4 -o %s %s:/ %s" % (options,volume.efsServer,volume.mountPoint), shell=True)
-      if (retcode != 0):
-        raise Exception("Error return code: %s mounting to EFS server: %s with mount point: %s" % (retcode,volume.efsServer,volume.mountPoint))
-      #endIf
-      TR.info(methodName,"%s mounted on EFS server: %s:/ with options: %s" % (volume.mountPoint,volume.efsServer,options))
-    #endFor
-  #endDef
-
   
   def signalWaitHandle(self, eth, etm, ets):
     """
@@ -2339,7 +2261,34 @@ class Bootstrap(object):
       self.rc = 1
     #endTry
   #endDef
+
+
+  def processPreInstall(self,preInstallPath):
+    """
+      Process version specific pre-installation command sets, e.g., to load a patched image
+      before running the inception install.
+    """
+    csp = CommandSetProcessor(commandSetsPath=preInstallPath,
+                              intrinsicVariables=IntrinsicVariables,
+                              sensitiveVariables=SensitiveParameters
+                              )
     
+    self.rc = csp.processCommandSets()
+  #endDef
+  
+  
+  def processPostInstall(self,postInstallPath):
+    """
+      Process version specific post-installation command sets, e.g., to install a patch or fix pack
+    """
+    csp = CommandSetProcessor(commandSetsPath=postInstallPath,
+                              intrinsicVariables=IntrinsicVariables,
+                              sensitiveVariables=SensitiveParameters
+                              )
+    
+    self.rc = csp.processCommandSets()
+  #endDef
+      
 
   def processCommandSets(self, commandSetsPath):
     """
@@ -2436,7 +2385,7 @@ class Bootstrap(object):
       TR.info(methodName,"Node role: %s" % role)
             
       # Finish off the initialization of the bootstrap class instance
-      self._init(rootStackName,bootStackId)
+      self.__init(rootStackName,bootStackId)
       
       # Using Route53 DNS server rather than /etc/hosts
       # WARNING - Discovered the hard way that the installation overwrites the /etc/hosts file
@@ -2501,15 +2450,10 @@ class Bootstrap(object):
       # Wait for notification from all nodes that the local ICP image load has completed.
       self.syncWithClusterNodes(desiredState='READY')
       
-      # TODO - Reinstate code to deal with fixpacks.  For now, we don't need it.
-      # Whether or not there is a fixpack will be something coming from the install map (installMap).
-      # All the fixpack details will be in the installMap.
-      #if (Utilities.toBoolean(self.InstallICPFixpack)):
-      #  self.installICPWithFixpack(self.installMap)             
-      #else:
-      # self.installICP(self.installMap)        
+      if (self.preInstallPath):
+        self.processPreInstall(self.preInstallPath)
       #endIf
-      
+            
       self.installICP(self.installMap) 
 
       # Install kubectl includes configuration of a permanent login context so this
@@ -2528,6 +2472,10 @@ class Bootstrap(object):
       
       # Install and configure Helm
       self.installHelm()
+      
+      if (self.postInstallPath):
+        self.processPostInstall(self.postInstallPath)
+      #endIf
       
       # Run all the commands in the commandsets directory
       if (self.commandSetsPath):
@@ -2551,7 +2499,7 @@ class Bootstrap(object):
         self._deleteSSMParameters()
       
         # Copy icpHome/logs to the S3 bucket for logs.
-        self.exportLogs(self.ICPDeploymentLogsBucketName,self.rootStackName,"%s/cluster/logs" % self.icpHome)
+        self.logExporter.exportLogs("%s/cluster/logs" % self.icpHome)
       except Exception, e:
         TR.error(methodName,"ERROR: %s" % e, e)
         self.rc = 1
@@ -2571,7 +2519,7 @@ class Bootstrap(object):
       
       try:
         # Copy the bootstrap logs to the S3 bucket for logs.
-        self.exportLogs(self.ICPDeploymentLogsBucketName,self.rootStackName,self.logsHome)
+        self.logExporter.exportLogs(self.logsHome)
       except Exception, e:
         TR.error(methodName,"ERROR: %s" % e, e)
         self.rc = 1

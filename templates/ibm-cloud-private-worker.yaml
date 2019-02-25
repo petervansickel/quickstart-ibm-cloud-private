@@ -239,6 +239,9 @@ Resources:
       MinSize: 1
       MaxSize: 10
       Tags:
+        - Key: Name
+          Value: Worker
+          PropagateAtLaunch: true
         - Key: Owner
           Value: !Ref ResourceOwner
           PropagateAtLaunch: true

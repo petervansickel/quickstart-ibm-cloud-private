@@ -27,6 +27,11 @@ Parameters:
       The type of EBS volume to use for the cluster member EC2 instances. The io1 volume type supports the specification of the disk IOPS.  The gp2 volume type is less expensive and may perform well enough for your purposes. The StorageIOPS parameter specifies the IOPS of an io2 storage device.
     Type: String
 
+  EFSDNSName:
+    Description: >-
+      The public DNS name of the EFS server to be used to configure shared storage. Used by the Vulnerability Advisor for shared storage for Minio.
+    Type: String
+
   ICPArchiveBucketName:
     Description: >-
       The name of the S3 bucket where the ICP install archive and Docker install binary is located.  The bucket name is needed to establish permission to access the ICP and Docker installation archives. Root template uses a mapping based on AWS region to provide the archive bucket name.
@@ -234,6 +239,9 @@ Resources:
       MinSize: 1
       MaxSize: 3
       Tags:
+        - Key: Name
+          Value: VulnerabilityAdvisor
+          PropagateAtLaunch: true
         - Key: Owner
           Value: !Ref ResourceOwner
           PropagateAtLaunch: true

@@ -367,6 +367,8 @@ Resources:
         #- !Ref ExternalSSHSecurityGroup
 
       Tags:
+        - Key: Name
+          Value: MasterNodeOne
         - Key: Owner
           Value: !Ref ResourceOwner
         - Key: ICPRole
@@ -473,6 +475,8 @@ Resources:
         - !Select [0, !Split [',', !Ref PrivateSubnetIds]]
 
       Tags:
+        - Key: Name
+          Value: MasterNodeTwo
         - Key: Owner
           Value: !Ref ResourceOwner
         - Key: ICPRole
@@ -579,6 +583,8 @@ Resources:
         - !Select [0, !Split [',', !Ref PrivateSubnetIds]]
 
       Tags:
+        - Key: Name
+          Value: MasterNodeThree
         - Key: Owner
           Value: !Ref ResourceOwner
         - Key: ICPRole
