@@ -626,3 +626,25 @@ Outputs:
     Description: >-
       The master node Elastic Load Balancer (ELB) hosted zone ID (used in Route53 record set).
     Value: !GetAtt MasterNodeLoadBalancer.CanonicalHostedZoneID
+
+  MasterNodeLoadBalancer:
+    Description: >-
+      ID of the master node Elastic Load Balancer (ELB)
+    Value: !Ref MasterNodeLoadBalancer
+
+  MasterNodeOne:
+    Description: >-
+      Instance ID of the first master node
+    Value: !Ref MasterNodeOne
+
+  MasterNodeTwo:
+    Condition: 3MastersCondition
+    Description: >-
+      Instance ID of the second master node
+    Value: !Ref MasterNodeTwo
+
+  MasterNodeThree:
+    Condition: 3MastersCondition
+    Description: >-
+      Instance ID of the third master node
+    Value: !Ref MasterNodeThree
