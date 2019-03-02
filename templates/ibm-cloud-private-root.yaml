@@ -198,7 +198,7 @@ Parameters:
   # Variables are declared in alphabetical order.
   AdminPassword:
     Description: >-
-      The IBM Cloud Private administrator (super user) password. As of IBM Cloud Private v3.1.2 the default password enforcement rule is '^([a-zA-Z0-9\-]{32,})$': The password must be a minimum of 32 characters long and contain only lower and uppercase characters, numbers and dashes. The QuickStart does not currently support the IBM Cloud Private option to modify the password enforcement rule.
+      The IBM Cloud Private administrator (super user) password. As of IBM Cloud Private v3.1.2 the default password enforcement rule is '^([a-zA-Z0-9\-]{32,})$': The password must be a minimum of 32 characters long and contain only lower and uppercase characters, numbers and dashes.
     NoEcho: true
     AllowedPattern: '^([a-zA-Z0-9\-]{32,})$'
     ConstraintDescription: >-
