@@ -233,7 +233,7 @@ Parameters:
 
 Conditions:
   DeployVulnerabilityAdvisor: !Not [!Equals [!Ref VulnerabilityAdvisorNodeCount, 0]]
-
+  3MastersCondition: !Equals [!Ref MasterNodeCount, 3]
 
 Resources:
 
@@ -389,6 +389,28 @@ Outputs:
     Description: >-
       The master node Elastic Load Balancer (ELB) DNS name (used in Route53 record set).
     Value: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerDNSName
+
+  MasterNodeLoadBalancer:
+    Description: >-
+      The master node Elastic Load Balancer (ELB) resource ID
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancer
+
+  MasterNodeOne:
+    Description: >-
+      MasterNodeOne reference
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeOne
+
+  MasterNodeTwo:
+    Condition: 3MastersCondition
+    Description: >-
+      MasterNodeTwo reference
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeTwo
+
+  MasterNodeThree:
+    Condition: 3MastersCondition
+    Description: >-
+      MasterNodeThree reference
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeThree
 
   MasterNodeLoadBalancerHostedZoneID:
     Description: >-
