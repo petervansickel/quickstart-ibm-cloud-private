@@ -263,7 +263,7 @@ class Bootstrap(object):
     """
       Constructor
       
-      NOTE: Some instance variable initialization happens in self.__init() which is 
+      NOTE: Some instance variable initialization happens in _init() which is 
       invoked early in main() at some point after getStackParameters().
       
     """
@@ -1198,8 +1198,8 @@ class Bootstrap(object):
       Cleanup method that deletes all the SSM parameters used to orchestrate the deployment.
       
       The SSMParameterKeys gets initialized in _getSSMParameterKeys() which gets called in 
-      the __init() method after the cluster hosts have all been determined by introspecting
-      the CloudFormation stack.
+      the _init() method after the cluster hosts have all been determined by introspection
+      of the CloudFormation stack.
       
       No need to attempt to delete_parameters if SSMParameterKeys is empty, which it 
       might be if something bad happens before SSMParameterKeys gets initialized.
@@ -1518,7 +1518,7 @@ class Bootstrap(object):
   #endDef
 
   
-  def loadInstallMap(self, version=None, region=None):
+  def loadInstallMap(self, mapPath="", version=None, region=None):
     """
       Return a dictionary that holds all the installation image information needed to 
       retrieve the installation images from S3. 
@@ -1536,6 +1536,10 @@ class Bootstrap(object):
     """
     methodName = "loadInstallMap"
     
+    if (not mapPath):
+      raise MissingArgumentException("The install map path must be provided.")
+    #endIf
+    
     if (not version):
       raise MissingArgumentException("The ICP version must be provided.")
     #endIf
@@ -1543,11 +1547,9 @@ class Bootstrap(object):
     if (not region):
       raise MissingArgumentException("The AWS region must be provided.")
     #endIf
-        
-    installDocPath = os.path.join(self.home,"maps","icp-install-artifact-map.yaml")
-    
-    with open(installDocPath,'r') as installDocFile:
-      installDoc = yaml.load(installDocFile)
+            
+    with open(mapPath,'r') as mapFile:
+      installDoc = yaml.load(mapFile)
     #endWith
     
     if (TR.isLoggable(Level.FINEST)):
@@ -2411,8 +2413,10 @@ class Bootstrap(object):
       # and no obvious ill-effects.  At this point, pretty sure it is not necessary.
       # PVS 25-JAN-2019: Haven't seen any problems. Disabling source/dest check is not needed.
       #self._disableSourceDestCheck()    
+
+      installMapPath = os.path.join(self.home,"maps","icp-install-artifact-map.yaml")
      
-      self.installMap = self.loadInstallMap(version=self.ICPVersion, region=self.region)
+      self.installMap = self.loadInstallMap(mapPath=installMapPath, version=self.ICPVersion, region=self.region)
       self.getInstallImages(self.installMap)
       
       # Wait for cluster nodes to be ready for the installation to proceed.

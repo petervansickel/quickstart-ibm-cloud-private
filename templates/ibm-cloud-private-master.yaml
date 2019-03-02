@@ -622,29 +622,29 @@ Outputs:
       The master node Elastic Load Balancer (ELB) DNS name (used in Route53 record set).
     Value: !GetAtt MasterNodeLoadBalancer.DNSName
 
+  MasterNodeLoadBalancer:
+    Description: >-
+      The master node Elastic Load Balancer (ELB) resource ID
+    Value: !Ref MasterNodeLoadBalancer
+
   MasterNodeLoadBalancerHostedZoneID:
     Description: >-
       The master node Elastic Load Balancer (ELB) hosted zone ID (used in Route53 record set).
     Value: !GetAtt MasterNodeLoadBalancer.CanonicalHostedZoneID
 
-  MasterNodeLoadBalancer:
-    Description: >-
-      ID of the master node Elastic Load Balancer (ELB)
-    Value: !Ref MasterNodeLoadBalancer
-
   MasterNodeOne:
     Description: >-
-      Instance ID of the first master node
+      MasterNodeOne reference
     Value: !Ref MasterNodeOne
 
   MasterNodeTwo:
     Condition: 3MastersCondition
     Description: >-
-      Instance ID of the second master node
+      MasterNodeTwo reference
     Value: !Ref MasterNodeTwo
 
   MasterNodeThree:
     Condition: 3MastersCondition
     Description: >-
-      Instance ID of the third master node
+      MasterNodeThree reference
     Value: !Ref MasterNodeThree
