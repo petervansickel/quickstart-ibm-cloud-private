@@ -155,7 +155,7 @@ HelpFile = "bootstrap.txt"
 
 
 """
-  The StackParameters are imported from the CloudFormation stack in the _init() 
+  The StackParameters are imported from the CloudFormation stack in the __init() 
   method below.
 """
 StackParameters = {}
@@ -208,7 +208,7 @@ IntrinsicVariables = {}
 """
   The SSMParameterKeys are used for rudimentary communication of state information
   between the boot node and the cluster nodes.
-  The SSMParameterKeys gets initialized in the _init() method.
+  The SSMParameterKeys gets initialized in the __init() method.
 """
 SSMParameterKeys = []
 
@@ -552,7 +552,7 @@ class Bootstrap(object):
   #endDef
   
   
-  def _init(self, rootStackName, bootStackId):
+  def __init(self, rootStackName, bootStackId):
     """
       Additional initialization of the Bootstrap instance based on stack parameters.
       
@@ -2387,7 +2387,7 @@ class Bootstrap(object):
       TR.info(methodName,"Node role: %s" % role)
             
       # Finish off the initialization of the bootstrap class instance
-      self._init(rootStackName,bootStackId)
+      self.__init(rootStackName,bootStackId)
       
       # Using Route53 DNS server rather than /etc/hosts
       # WARNING - Discovered the hard way that the installation overwrites the /etc/hosts file
