@@ -997,7 +997,9 @@ Resources:
         ExternalSSHSecurityGroup: !GetAtt IAMResources.Outputs.ExternalSSHSecurityGroup
         IBMCloudPrivateVPC: !Ref IBMCloudPrivateVPC
         ICPArchiveBucketName: !FindInMap [AWSRegionS3Bucket, !Ref "AWS::Region", ArchiveBucket]
-        ICPClusterNodeScriptPackagePath: !FindInMap [ScriptPackageMap, cluster-node, ScriptPackagePath]
+        ICPClusterNodeScriptPackagePath: !Sub
+         - ${KeyPrefix}${ScriptPackagePath}
+         -  { KeyPrefix: !Ref QSS3KeyPrefix, ScriptPackagePath: !FindInMap [ScriptPackageMap, cluster-node, ScriptPackagePath] }
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
         ICPMasterSecurityGroup: !GetAtt IAMResources.Outputs.ICPMasterSecurityGroup
         ICPNodeProfile: !GetAtt IAMResources.Outputs.ICPNodeProfile
