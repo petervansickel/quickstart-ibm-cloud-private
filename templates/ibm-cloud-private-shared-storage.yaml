@@ -46,7 +46,7 @@ Resources:
     Type: AWS::EFS::FileSystem
     Properties:
       PerformanceMode: generalPurpose
-      Encrypted: False
+      Encrypted: True
       FileSystemTags:
         - Key: Name
           Value: ClusterSharedStorage

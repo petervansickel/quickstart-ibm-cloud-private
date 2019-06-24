@@ -108,6 +108,15 @@ Parameters:
       - m5.xlarge
       - m5.2xlarge
       - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+      - m5a.4xlarge
+      - m5a.12xlarge
+      - m5a.24xlarge
+      - c5.4xlarge
+      - c5.12xlarge
+      - c5.18xlarge
+      - c5.24xlarge
       - m5d.large
       - m5d.xlarge
       - m5d.2xlarge
@@ -171,8 +180,8 @@ Resources:
         ICPNodeInitScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}${ScriptPackagePath}
-             - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+             - https://${ScriptBucketName}.s3.amazonaws.com/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
 
         StackPropertiesFile:
           files:
