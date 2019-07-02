@@ -1,0 +1,28 @@
+
+# ansible playbook to modify the master.json file
+# This gets executed before the Hyperkube patch is applied.
+# Assumptions:
+#   Running as root
+#   /etc/ansible/hosts has been configured with a master group
+#
+---
+kind: ansible
+command: ansible-playbook
+# Provide a file name for the playbook
+playbook: update-master-json.yaml
+
+...
+# The playbook:
+---
+kind: playbook
+playbook:
+  - hosts: master
+    name: Update master.json
+    tasks:
+    - name: Modify anonymous-auth
+      lineinfile:
+        path: /etc/cfc/pods/master.json
+        insertafter: '"--bind-address=0.0.0.0",'
+        state: present
+        line: '          "--anonymous-auth=false",'
+...

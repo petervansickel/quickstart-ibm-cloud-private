@@ -27,7 +27,7 @@ Parameters:
 
   EFSDNSName:
     Description: >-
-      The EFS server public DNS name providing shared storage used by the master nodes for the various mount points they need to share, i.e., docker registry, kubernetes audit log, ICP audit log.  Used by the master node initialization script when there is more than 1 master node.
+      The EFS server public DNS name providing shared storage used by the master and Vulnerability Advisor nodes for the various mount points they need to share. For example, the master nodes share the docker registry. The Vulnerability Advisor nodes share the Minio storage starting with ICP 3.1.1.
     Type: String
 
   ExternalSSHSecurityGroup:
@@ -224,6 +224,15 @@ Parameters:
       - m5.xlarge
       - m5.2xlarge
       - m5.4xlarge
+      - m5.12xlarge
+      - m5.24xlarge
+      - m5a.4xlarge
+      - m5a.12xlarge
+      - m5a.24xlarge
+      - c5.4xlarge
+      - c5.12xlarge
+      - c5.18xlarge
+      - c5.24xlarge
       - m5d.large
       - m5d.xlarge
       - m5d.2xlarge
@@ -233,7 +242,7 @@ Parameters:
 
 Conditions:
   DeployVulnerabilityAdvisor: !Not [!Equals [!Ref VulnerabilityAdvisorNodeCount, 0]]
-
+  3MastersCondition: !Equals [!Ref MasterNodeCount, 3]
 
 Resources:
 
@@ -305,6 +314,7 @@ Resources:
         AMIImageId: !Ref AMIImageId
         AvailabilityZoneCount: !Ref AvailabilityZoneCount
         EBSVolumeType: !Ref EBSVolumeType
+        EFSDNSName: !Ref EFSDNSName
         ICPArchiveBucketName: !Ref ICPArchiveBucketName
         ICPClusterNodeScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath
         ICPDeploymentLogsBucketName: !Ref ICPDeploymentLogsBucketName
@@ -393,6 +403,28 @@ Outputs:
     Description: >-
       The master node Elastic Load Balancer (ELB) hosted zone ID (used in Route53 record set).
     Value: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancerHostedZoneID
+
+  MasterNodeLoadBalancer:
+    Description: >-
+      ID of the master node Elastic Load Balancer (ELB)
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeLoadBalancer
+
+  MasterNodeOne:
+    Description: >-
+      Instance ID of the first master node
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeOne
+
+  MasterNodeTwo:
+    Condition: 3MastersCondition
+    Description: >-
+      Instance ID of the second master node
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeTwo
+
+  MasterNodeThree:
+    Condition: 3MastersCondition
+    Description: >-
+      Instance ID of the third master node
+    Value: !GetAtt MasterNodeStack.Outputs.MasterNodeThree
 
   ProxyNodeLoadBalancerDNSName:
     Description: >-

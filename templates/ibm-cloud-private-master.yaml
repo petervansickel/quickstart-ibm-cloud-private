@@ -319,8 +319,8 @@ Resources:
         ICPNodeInitScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}${ScriptPackagePath}
-             - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+             - https://${ScriptBucketName}.s3.amazonaws.com/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
 
         StackPropertiesFile:
           files:
@@ -367,6 +367,8 @@ Resources:
         #- !Ref ExternalSSHSecurityGroup
 
       Tags:
+        - Key: Name
+          Value: MasterNodeOne
         - Key: Owner
           Value: !Ref ResourceOwner
         - Key: ICPRole
@@ -428,8 +430,8 @@ Resources:
         ICPNodeInitScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}${ScriptPackagePath}
-             - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+             - https://${ScriptBucketName}.s3.amazonaws.com/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName,  ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
 
         StackPropertiesFile:
           files:
@@ -473,6 +475,8 @@ Resources:
         - !Select [0, !Split [',', !Ref PrivateSubnetIds]]
 
       Tags:
+        - Key: Name
+          Value: MasterNodeTwo
         - Key: Owner
           Value: !Ref ResourceOwner
         - Key: ICPRole
@@ -534,8 +538,8 @@ Resources:
         ICPNodeInitScripts:
           sources:
             /root: !Sub
-             - https://${ScriptBucketName}.s3.amazonaws.com/${KeyPrefix}${ScriptPackagePath}
-             - { ScriptBucketName: !Ref ICPScriptBucketName, KeyPrefix: !Ref ICPS3KeyPrefix, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
+             - https://${ScriptBucketName}.s3.amazonaws.com/${ScriptPackagePath}
+             - { ScriptBucketName: !Ref ICPScriptBucketName, ScriptPackagePath: !Ref ICPClusterNodeScriptPackagePath }
 
         StackPropertiesFile:
           files:
@@ -579,6 +583,8 @@ Resources:
         - !Select [0, !Split [',', !Ref PrivateSubnetIds]]
 
       Tags:
+        - Key: Name
+          Value: MasterNodeThree
         - Key: Owner
           Value: !Ref ResourceOwner
         - Key: ICPRole
@@ -620,3 +626,25 @@ Outputs:
     Description: >-
       The master node Elastic Load Balancer (ELB) hosted zone ID (used in Route53 record set).
     Value: !GetAtt MasterNodeLoadBalancer.CanonicalHostedZoneID
+
+  MasterNodeLoadBalancer:
+    Description: >-
+      ID of the master node Elastic Load Balancer (ELB)
+    Value: !Ref MasterNodeLoadBalancer
+
+  MasterNodeOne:
+    Description: >-
+      Instance ID of the first master node
+    Value: !Ref MasterNodeOne
+
+  MasterNodeTwo:
+    Condition: 3MastersCondition
+    Description: >-
+      Instance ID of the second master node
+    Value: !Ref MasterNodeTwo
+
+  MasterNodeThree:
+    Condition: 3MastersCondition
+    Description: >-
+      Instance ID of the third master node
+    Value: !Ref MasterNodeThree

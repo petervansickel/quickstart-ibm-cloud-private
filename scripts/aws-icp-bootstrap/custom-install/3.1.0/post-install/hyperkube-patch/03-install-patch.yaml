@@ -1,0 +1,42 @@
+#
+# Commands to install the Kubernetes hyperkube patch for ICP 3.1.0
+#
+# The docker run command is described in detail here:
+# https://docs.docker.com/engine/reference/commandline/run/
+# WARNING: As of FEB 2019 only the bare minimum of docker run is supported.
+# See the DockerHelper module.
+#
+kind: docker 
+command: run
+image: ibmcom/icp-inception-amd64:3.1.0-ee
+
+# The image command string is passed off to the image
+image-command: patch -v
+
+# change directory to run the command:
+chdir: ${ICPHome}/cluster
+
+# flags don't have any arguments
+# multi-character flags get a double-dash
+flags:
+  - tty
+  - rm
+
+# singleton options take an argument
+# multi-character option names get a double-dash
+#options:
+
+# network options are special: = in the syntax and they can take an argument
+# See: https://docs.docker.com/engine/reference/commandline/run/
+# Example network options: net, network, ip, ip6
+network:
+  net: host
+  
+  
+# each environment variable gets applied with a -e NAME=VALUE
+env:
+  LICENSE: accept 
+
+# Volume bind mounts 
+volumes:
+  - '"$(pwd)":/installer/cluster'
