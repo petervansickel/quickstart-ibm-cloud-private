@@ -246,7 +246,7 @@ Resources:
       VPCZoneIdentifier: !Split [',', !Ref PrivateSubnetIds]
       DesiredCapacity: !Ref WorkerNodeCount
       MinSize: 1
-      MaxSize: 10
+      MaxSize: 40
       Tags:
         - Key: Name
           Value: Worker
